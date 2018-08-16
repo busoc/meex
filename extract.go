@@ -70,6 +70,7 @@ func runDispatch(cmd *cli.Command, args []string) error {
 			if c != nil {
 				c.Close()
 			}
+			t = t.Truncate(Five)
 			year := fmt.Sprintf("%04d", t.Year())
 			doy := fmt.Sprintf("%03d", t.YearDay())
 			hour := fmt.Sprintf("%02d", t.Hour())
@@ -77,9 +78,9 @@ func runDispatch(cmd *cli.Command, args []string) error {
 			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
 				return err
 			}
-			min := t.Truncate(Five).Minute()
+			min := t.Minute() //t.Truncate(Five).Minute()
 			file := fmt.Sprintf("rt_%02d_%02d.dat", min, min+4)
-			f, err := os.Create(filepath.Join(dir, file))
+			f, err := os.OpenFile(filepath.Join(dir, file), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				return err
 			}
