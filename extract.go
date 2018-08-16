@@ -58,42 +58,27 @@ func runDispatch(cmd *cli.Command, args []string) error {
 	if err := os.MkdirAll(*datadir, 0755); err != nil && !os.IsExist(err) {
 		return err
 	}
-	var (
-		prev time.Time
-		w    io.Writer
-		c    io.Closer
-	)
+
+	ws := make(map[time.Time]io.WriteCloser)
 	delta := GPS.Sub(UNIX)
 	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
-		t := p.Timestamp().Add(delta)
-		if prev.IsZero() || (t.Minute()%5 == 0 && t.Sub(prev) >= Five) {
-			if c != nil {
-				c.Close()
-			}
-			t = t.Truncate(Five)
-			year := fmt.Sprintf("%04d", t.Year())
-			doy := fmt.Sprintf("%03d", t.YearDay())
-			hour := fmt.Sprintf("%02d", t.Hour())
-			dir := filepath.Join(*datadir, year, doy, hour)
-			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
-				return err
-			}
-			min := t.Minute() //t.Truncate(Five).Minute()
-			file := fmt.Sprintf("rt_%02d_%02d.dat", min, min+4)
-			f, err := os.OpenFile(filepath.Join(dir, file), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		t := p.Timestamp().Add(delta).Truncate(Five)
+		w, ok := ws[t]
+		if !ok {
+			file, err := TimePath(*datadir, t)
 			if err != nil {
 				return err
 			}
-			c = f
-			w = NoDuplicate(f)
-			prev = t
+			w, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return err
+			}
+			defer w.Close()
+			ws[t] = w
 		}
 		if _, err := w.Write(p.Bytes()); err != nil {
 			return err
 		}
-	}
-	if c != nil {
-		c.Close()
 	}
 	return nil
 }
@@ -105,7 +90,6 @@ func runExtract(cmd *cli.Command, args []string) error {
 	interval := cmd.Flag.Duration("i", 0, "interval")
 	kind := cmd.Flag.String("k", "", "packet type")
 	cut := cmd.Flag.Bool("c", false, "only packets body")
-	// deflate := cmd.Flag.Bool("z", false, "compress files")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
