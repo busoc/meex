@@ -23,16 +23,16 @@ var sumCommand = &cli.Command{
 	Run:   runSum,
 }
 
-var scanCommand = &cli.Command {
+var scanCommand = &cli.Command{
 	Usage: "scan <rt,...>",
 	Short: "fast scanning of RT file(s)",
 	Run:   runScan,
 }
 
-var indexCommand = &cli.Command {
+var indexCommand = &cli.Command{
 	Usage: "index [-k] <rt,...>",
 	Short: "create an index of packets found in RT files",
-	Run: runIndex,
+	Run:   runIndex,
 }
 
 func runIndex(cmd *cli.Command, args []string) error {
@@ -43,7 +43,7 @@ func runIndex(cmd *cli.Command, args []string) error {
 	}
 	delta := GPS.Sub(UNIX)
 	var (
-		ix uint64
+		ix   uint64
 		prev time.Time
 	)
 	for p := range Walk(cmd.Flag.Args(), kind.Decod) {

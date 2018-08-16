@@ -162,8 +162,8 @@ func DecodePD() Decoder {
 		if err := u.UnmarshalBinary(bs); err != nil {
 			return nil, err
 		}
-		p := PDPacket {
-			UMI: &u,
+		p := PDPacket{
+			UMI:     &u,
 			Payload: bs,
 		}
 		_ = p
