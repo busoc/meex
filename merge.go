@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/md5"
 	"io"
 	"log"
 	"os"
@@ -29,20 +28,27 @@ var sortCommand = &cli.Command{
 func runSort(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
-	span := cmd.Flag.Duration("r", Five, "time range")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-
-	delta := GPS.Sub(UNIX)
-	now := time.Now()
-	s, err := mergeFiles(cmd.Flag.Arg(0), cmd.Flag.Arg(0), cmd.Flag.Arg(1), kind.Decod, *span)
-	if err == nil && s != nil {
-		f := s.Starts.Add(delta).Format(TimeFormat)
-		t := s.Ends.Add(delta).Format(TimeFormat)
-		ratio := float64(s.Size>>20) / time.Since(now).Seconds()
-		log.Printf("%d packets in range %s/%s merged (%.2f MB/s) - rogue packet(s): %d", s.Count, f, t, ratio, s.Rogue)
+	source, err := os.Open(cmd.Flag.Arg(0))
+	if err != nil {
+		return err
 	}
+	defer source.Close()
+
+	target, err := os.Create(cmd.Flag.Arg(1))
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+
+	s, err := NewSorter(source, kind.Decod)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.CopyBuffer(NoDuplicate(target), s, make([]byte, MaxBufferSize))
 	return err
 }
 
@@ -248,25 +254,4 @@ func (m *Merger) scanPackets(src, tgt <-chan Packet) (Packet, Packet) {
 		p1 = p
 	}
 	return p0, p1
-}
-
-type noDuplicateWriter struct {
-	sums  map[[md5.Size]byte]struct{}
-	inner io.Writer
-}
-
-func NoDuplicate(w io.Writer) io.Writer {
-	return &noDuplicateWriter{
-		sums:  make(map[[md5.Size]byte]struct{}),
-		inner: w,
-	}
-}
-
-func (w *noDuplicateWriter) Write(bs []byte) (int, error) {
-	sum := md5.Sum(bs)
-	if _, ok := w.sums[sum]; ok {
-		return len(bs), nil
-	}
-	w.sums[sum] = struct{}{}
-	return w.inner.Write(bs)
 }
