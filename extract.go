@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -34,11 +35,66 @@ func (i *byId) Decode(bs []byte) (Packet, error) {
 	return p, nil
 }
 
+var dispatchCommand = &cli.Command{
+	Usage: "dispatch [-k] [-d] <rt,...>",
+	Short: "dispatch packets in the correct location",
+	Run:   runDispatch,
+}
+
 var extractCommand = &cli.Command{
 	Usage: "extract [-p] [-k] [-t] [-i] [-d] <rt,...>",
 	Alias: []string{"filter"},
 	Short: "extract packets from RT file(s)",
 	Run:   runExtract,
+}
+
+func runDispatch(cmd *cli.Command, args []string) error {
+	var kind Kind
+	cmd.Flag.Var(&kind, "k", "packet type")
+	datadir := cmd.Flag.String("d", os.TempDir(), "data directory")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(*datadir, 0755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	var (
+		prev time.Time
+		w    io.Writer
+		c    io.Closer
+	)
+	delta := GPS.Sub(UNIX)
+	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
+		t := p.Timestamp().Add(delta)
+		if prev.IsZero() || (t.Minute()%5 == 0 && t.Sub(prev) >= Five) {
+			if c != nil {
+				c.Close()
+			}
+			year := fmt.Sprintf("%04d", t.Year())
+			doy := fmt.Sprintf("%03d", t.YearDay())
+			hour := fmt.Sprintf("%02d", t.Hour())
+			dir := filepath.Join(*datadir, year, doy, hour)
+			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+				return err
+			}
+			min := t.Truncate(Five).Minute()
+			file := fmt.Sprintf("rt_%02d_%02d.dat", min, min+4)
+			f, err := os.Create(filepath.Join(dir, file))
+			if err != nil {
+				return err
+			}
+			c = f
+			w = NoDuplicate(f)
+			prev = t
+		}
+		if _, err := w.Write(p.Bytes()); err != nil {
+			return err
+		}
+	}
+	if c != nil {
+		c.Close()
+	}
+	return nil
 }
 
 func runExtract(cmd *cli.Command, args []string) error {
