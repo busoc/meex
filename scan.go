@@ -522,7 +522,7 @@ func NewReader(r io.Reader, d Decoder) *Reader {
 	return &Reader{scan: Scan(r), decoder: d}
 }
 
-func (r *Reader) Index() (int, []*Index) {
+func (r *Reader) Index() []*Index {
 	var (
 		is   []*Index
 		curr int
@@ -537,7 +537,7 @@ func (r *Reader) Index() (int, []*Index) {
 		curr += i.Size
 		is = append(is, &i)
 	}
-	return curr, is
+	return is
 }
 
 func (r *Reader) Gaps() <-chan *Gap {

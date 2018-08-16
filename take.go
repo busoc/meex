@@ -26,7 +26,7 @@ var mixCommand = &cli.Command{
 }
 
 var shuffleCommand = &cli.Command{
-	Usage: "shuffle [-k] <rt>",
+	Usage: "shuffle [-k] <source> <target>",
 	Short: "shuffle packets from RT files",
 	Run:   runShuffle,
 }
@@ -34,50 +34,28 @@ var shuffleCommand = &cli.Command{
 func runShuffle(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
-	uniq := cmd.Flag.Bool("u", false, "no duplicate")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-	source, err := os.OpenFile(cmd.Flag.Arg(0), os.O_RDWR, 0644)
+	source, err := os.Open(cmd.Flag.Arg(0))
 	if err != nil {
 		return err
 	}
 	defer source.Close()
 
-	r := NewReader(source, kind.Decod)
-	pivot, is := r.Index()
-	if _, err := source.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	target, err := os.OpenFile(cmd.Flag.Arg(0), os.O_RDWR|os.O_APPEND, 0644)
+	target, err := os.Create(cmd.Flag.Arg(1))
 	if err != nil {
 		return err
 	}
-	rand.Shuffle(len(is), func(i, j int) { is[i], is[j] = is[j], is[i] })
-	for _, i := range is {
-		_, err := source.Seek(int64(i.Offset), io.SeekStart)
-		if err != nil {
-			return err
-		}
-		if _, err := io.CopyN(target, source, int64(i.Size)); err != nil {
-			return err
-		}
-	}
-	if _, err := target.Seek(int64(pivot), io.SeekStart); err != nil {
-		return err
-	}
-	if _, err := source.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	var w io.Writer = source
-	if *uniq {
-		w = NoDuplicate(w)
-	}
-	size, err := io.Copy(w, target)
+	defer target.Close()
+
+	s, err := NewShuffler(source, kind.Decod)
 	if err != nil {
 		return err
 	}
-	return source.Truncate(size)
+
+	_, err = io.CopyBuffer(NoDuplicate(target), s, make([]byte, MaxBufferSize))
+	return err
 }
 
 func runMix(cmd *cli.Command, args []string) error {
@@ -147,6 +125,38 @@ func runTake(cmd *cli.Command, args []string) error {
 		}
 	}
 	return s.Err()
+}
+
+type shuffler struct {
+	pos   int
+	index []*Index
+
+	reader io.ReadSeeker
+}
+
+func NewShuffler(rs io.ReadSeeker, d Decoder) (io.Reader, error) {
+	is := NewReader(rs, d).Index()
+	rand.Shuffle(len(is), func(i, j int) { is[i], is[j] = is[j], is[i] })
+	if _, err := rs.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return &shuffler{index: is, reader: rs}, nil
+}
+
+func (s *shuffler) Read(bs []byte) (int, error) {
+	if s.pos >= len(s.index) {
+		return 0, io.EOF
+	}
+	ix := s.index[s.pos]
+	if len(bs) < ix.Size {
+		return 0, io.ErrShortBuffer
+	}
+	if _, err := s.reader.Seek(int64(ix.Offset), io.SeekStart); err != nil {
+		return 0, err
+	}
+	s.pos++
+
+	return io.ReadFull(s.reader, bs[:ix.Size])
 }
 
 type splitWriters struct {
