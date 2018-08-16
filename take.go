@@ -25,28 +25,59 @@ var mixCommand = &cli.Command{
 	Run:   runMix,
 }
 
-type mixReaders struct {
-	rs []Scanner
+var shuffleCommand = &cli.Command{
+	Usage: "shuffle [-k] <rt>",
+	Short: "shuffle packets from RT files",
+	Run:   runShuffle,
 }
 
-func MixReader(rs ...Scanner) io.Reader {
-	vs := make([]Scanner, len(rs))
-	copy(vs, rs)
+func runShuffle(cmd *cli.Command, args []string) error {
+	var kind Kind
+	cmd.Flag.Var(&kind, "k", "packet type")
+	uniq := cmd.Flag.Bool("u", false, "no duplicate")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	source, err := os.OpenFile(cmd.Flag.Arg(0), os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
 
-	return &mixReaders{vs}
-}
-
-func (m *mixReaders) Read(bs []byte) (int, error) {
-	ix := rand.Intn(len(m.rs))
-	if !m.rs[ix].Scan() {
-		if len(m.rs) > 1 {
-			m.rs = append(m.rs[:ix], m.rs[ix+1:]...)
-			ix = (ix + 1) % len(m.rs)
-		} else {
-			return 0, io.EOF
+	r := NewReader(source, kind.Decod)
+	pivot, is := r.Index()
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	target, err := os.OpenFile(cmd.Flag.Arg(0), os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	rand.Shuffle(len(is), func(i, j int) { is[i], is[j] = is[j], is[i] })
+	for _, i := range is {
+		_, err := source.Seek(int64(i.Offset), io.SeekStart)
+		if err != nil {
+			return err
+		}
+		if _, err := io.CopyN(target, source, int64(i.Size)); err != nil {
+			return err
 		}
 	}
-	return copy(bs, m.rs[ix].Bytes()), m.rs[ix].Err()
+	if _, err := target.Seek(int64(pivot), io.SeekStart); err != nil {
+		return err
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	var w io.Writer = source
+	if *uniq {
+		w = NoDuplicate(w)
+	}
+	size, err := io.Copy(w, target)
+	if err != nil {
+		return err
+	}
+	return source.Truncate(size)
 }
 
 func runMix(cmd *cli.Command, args []string) error {
@@ -159,4 +190,28 @@ func (sw *splitWriters) Close() error {
 		}
 	}
 	return err
+}
+
+type mixReaders struct {
+	rs []Scanner
+}
+
+func MixReader(rs ...Scanner) io.Reader {
+	vs := make([]Scanner, len(rs))
+	copy(vs, rs)
+
+	return &mixReaders{vs}
+}
+
+func (m *mixReaders) Read(bs []byte) (int, error) {
+	ix := rand.Intn(len(m.rs))
+	if !m.rs[ix].Scan() {
+		if len(m.rs) > 1 {
+			m.rs = append(m.rs[:ix], m.rs[ix+1:]...)
+			ix = (ix + 1) % len(m.rs)
+		} else {
+			return 0, io.EOF
+		}
+	}
+	return copy(bs, m.rs[ix].Bytes()), m.rs[ix].Err()
 }

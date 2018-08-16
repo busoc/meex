@@ -505,6 +505,13 @@ func (v *VMUPacket) Valid() bool {
 	return sum == binary.LittleEndian.Uint32(v.Payload[j:])
 }
 
+type Index struct {
+	Offset    int
+	Sequence  int
+	Size      int
+	Timestamp time.Time
+}
+
 type Reader struct {
 	scan    *bufio.Scanner
 	decoder Decoder
@@ -513,6 +520,24 @@ type Reader struct {
 
 func NewReader(r io.Reader, d Decoder) *Reader {
 	return &Reader{scan: Scan(r), decoder: d}
+}
+
+func (r *Reader) Index() (int, []*Index) {
+	var (
+		is   []*Index
+		curr int
+	)
+	for p := range r.Packets() {
+		i := Index{
+			Offset:    curr,
+			Timestamp: p.Timestamp(),
+			Sequence:  p.Sequence(),
+			Size:      p.Len(),
+		}
+		curr += i.Size
+		is = append(is, &i)
+	}
+	return curr, is
 }
 
 func (r *Reader) Gaps() <-chan *Gap {

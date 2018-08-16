@@ -33,6 +33,7 @@ var commands = []*cli.Command{
 	statsCommand,
 	indexCommand,
 	dispatchCommand,
+	shuffleCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive
