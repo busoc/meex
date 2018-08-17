@@ -18,7 +18,7 @@ type shuffler struct {
 	reader io.ReadSeeker
 }
 
-func NewSorter(r io.ReadSeeker, d Decoder) (io.Reader, error) {
+func Sort(r io.ReadSeeker, d Decoder) (io.Reader, error) {
 	ix := NewReader(r, d).Index()
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func NewSorter(r io.ReadSeeker, d Decoder) (io.Reader, error) {
 	return &shuffler{index: ix, reader: r}, nil
 }
 
-func NewShuffler(rs io.ReadSeeker, d Decoder) (io.Reader, error) {
+func Shuffle(rs io.ReadSeeker, d Decoder) (io.Reader, error) {
 	ix := NewReader(rs, d).Index()
 	if _, err := rs.Seek(0, io.SeekStart); err != nil {
 		return nil, err

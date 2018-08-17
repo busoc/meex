@@ -46,7 +46,7 @@ func runShuffle(cmd *cli.Command, args []string) error {
 	}
 	defer target.Close()
 
-	s, err := NewShuffler(source, kind.Decod)
+	s, err := Shuffle(source, kind.Decod)
 	if err != nil {
 		return err
 	}
