@@ -32,7 +32,7 @@ var scanCommand = &cli.Command{
 var indexCommand = &cli.Command{
 	Usage: "index [-k] <rt,...>",
 	Short: "create an index of packets found in RT files",
-	Run:   nil,
+	Run:   runIndex,
 }
 
 func runIndex(cmd *cli.Command, args []string) error {

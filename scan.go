@@ -506,6 +506,7 @@ func (v *VMUPacket) Valid() bool {
 }
 
 type Index struct {
+	Id        int
 	Offset    int
 	Sequence  int
 	Size      int
@@ -528,7 +529,9 @@ func (r *Reader) Index() []*Index {
 		curr int
 	)
 	for p := range r.Packets() {
+		id, _ := p.Id()
 		i := Index{
+			Id:        id,
 			Offset:    curr,
 			Timestamp: p.Timestamp(),
 			Sequence:  p.Sequence(),

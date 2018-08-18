@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+type SortFunc func([]*Index) []*Index
+
 type shuffler struct {
 	pos   int
 	index []*Index
@@ -19,13 +21,21 @@ type shuffler struct {
 }
 
 func Sort(r io.ReadSeeker, d Decoder) (io.Reader, error) {
+	return SortWith(r, d, nil)
+}
+
+func SortWith(r io.ReadSeeker, d Decoder, f SortFunc) (io.Reader, error) {
 	ix := NewReader(r, d).Index()
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	sort.Slice(ix, func(i, j int) bool {
-		return ix[i].Timestamp.Before(ix[j].Timestamp)
-	})
+	if f == nil {
+		sort.Slice(ix, func(i, j int) bool {
+			return ix[i].Timestamp.Before(ix[j].Timestamp)
+		})
+	} else {
+		ix = f(ix)
+	}
 	return &shuffler{index: ix, reader: r}, nil
 }
 

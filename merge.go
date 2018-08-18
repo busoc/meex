@@ -43,7 +43,7 @@ func runSort(cmd *cli.Command, args []string) error {
 	}
 	defer target.Close()
 
-	s, err := Sort(source, kind.Decod)
+	s, err := SortWith(source, kind.Decod, kind.Sort)
 	if err != nil {
 		return err
 	}

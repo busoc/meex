@@ -51,6 +51,31 @@ Use {{.Name}} [command] -h for more information about its usage.
 
 type Kind struct {
 	Decod Decoder
+	Sort  SortFunc
+}
+
+func SortHRDIndex(ix []*Index) []*Index {
+	sort.Slice(ix, func(i, j int) bool {
+		if ix[i].Timestamp.Equal(ix[j].Timestamp) {
+			if ix[i].Id != ix[j].Id {
+				return ix[i].Size < ix[j].Size
+			} else {
+				return ix[i].Sequence < ix[j].Sequence
+			}
+		}
+		return ix[i].Timestamp.Before(ix[j].Timestamp)
+	})
+	return ix
+}
+
+func SortTMIndex(ix []*Index) []*Index {
+	sort.Slice(ix, func(i, j int) bool {
+		if ix[i].Timestamp.Equal(ix[j].Timestamp) {
+			return ix[i].Sequence < ix[j].Sequence
+		}
+		return ix[i].Timestamp.Before(ix[j].Timestamp)
+	})
+	return ix
 }
 
 func (k *Kind) Set(v string) error {
@@ -61,8 +86,10 @@ func (k *Kind) Set(v string) error {
 		return fmt.Errorf("no packet type provided")
 	case "tm", "pth", "pt":
 		k.Decod = DecodeTM()
+		k.Sort = SortTMIndex
 	case "hrd", "hr", "hrdl":
 		k.Decod = DecodeVMU()
+		k.Sort = SortHRDIndex
 	}
 	return nil
 }
