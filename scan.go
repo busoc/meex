@@ -522,7 +522,13 @@ type Reader struct {
 }
 
 func NewReader(r io.Reader, d Decoder) *Reader {
-	return &Reader{scan: Scan(r), decoder: d}
+	rs := &Reader{decoder: d}
+	rs.Reset(r)
+	return rs
+}
+
+func (r *Reader) Reset(rs io.Reader) {
+	r.scan = Scan(rs)
 }
 
 func (r *Reader) Index() []*Index {

@@ -62,7 +62,7 @@ func runJoin(cmd *cli.Command, args []string) error {
 	}
 	defer w.Close()
 
-	jr, err := Join(kind.Decod, kind.Sort, source, target)
+	jr, err := JoinWith(kind.Decod, kind.Sort, source, target)
 	if err != nil {
 		return err
 	}

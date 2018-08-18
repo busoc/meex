@@ -20,7 +20,11 @@ type joiner struct {
 	index  []*Index
 }
 
-func Join(d Decoder, f SortFunc, rs ...io.ReadSeeker) (io.Reader, error) {
+func Join(d Decoder, rs ...io.ReadSeeker) (io.Reader, error) {
+	return JoinWith(d, nil, rs...)
+}
+
+func JoinWith(d Decoder, f SortFunc, rs ...io.ReadSeeker) (io.Reader, error) {
 	ms := make(map[string]io.ReadSeeker)
 	index := make([]*Index, 0, 300*len(rs)*4)
 	digest := md5.New()

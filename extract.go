@@ -22,6 +22,9 @@ func DecodeById(id int, d Decoder) Decoder {
 }
 
 func (i *byId) Decode(bs []byte) (Packet, error) {
+	if i.inner.Decode == nil {
+		return nil, ErrSkip
+	}
 	p, err := i.inner.Decode(bs)
 	if err != nil {
 		return p, err
