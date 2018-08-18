@@ -511,6 +511,8 @@ type Index struct {
 	Sequence  int
 	Size      int
 	Timestamp time.Time
+
+	Sum string
 }
 
 type Reader struct {

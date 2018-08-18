@@ -13,6 +13,57 @@ import (
 
 type SortFunc func([]*Index) []*Index
 
+type joiner struct {
+	rs map[string]io.ReadSeeker
+
+	offset int
+	index  []*Index
+}
+
+func Join(d Decoder, f SortFunc, rs ...io.ReadSeeker) (io.Reader, error) {
+	ms := make(map[string]io.ReadSeeker)
+	index := make([]*Index, 0, 300*len(rs)*4)
+	digest := md5.New()
+	for _, r := range rs {
+		ix := NewReader(io.TeeReader(r, digest), d).Index()
+		sum := fmt.Sprintf("%x", digest.Sum(nil))
+		for _, i := range ix {
+			i.Sum = sum
+			index = append(index, i)
+		}
+		if _, err := r.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		ms[sum] = r
+		digest.Reset()
+	}
+	if f == nil {
+		sort.Slice(index, func(i, j int) bool {
+			return index[i].Timestamp.Before(index[j].Timestamp)
+		})
+	} else {
+		index = f(index)
+	}
+	return &joiner{rs: ms, index: index}, nil
+}
+
+func (j *joiner) Read(bs []byte) (int, error) {
+	if len(bs) < MaxBufferSize {
+		return 0, io.ErrShortBuffer
+	}
+	if j.offset >= len(j.index) {
+		return 0, io.EOF
+	}
+	ix := j.index[j.offset]
+	j.offset++
+
+	r := j.rs[ix.Sum]
+	if _, err := r.Seek(int64(ix.Offset), io.SeekStart); err != nil {
+		return 0, err
+	}
+	return io.ReadFull(r, bs[:ix.Size])
+}
+
 type shuffler struct {
 	pos   int
 	index []*Index
