@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"hash"
 	"io"
 	"os"
 	"time"
@@ -518,20 +521,32 @@ type Index struct {
 type Reader struct {
 	scan    *bufio.Scanner
 	decoder Decoder
-	queue   chan Packet
+	digest  hash.Hash
+
+	queue chan Packet
 }
 
 func NewReader(r io.Reader, d Decoder) *Reader {
-	rs := &Reader{decoder: d}
+	rs := &Reader{decoder: d, digest: md5.New()}
 	rs.Reset(r)
 	return rs
 }
 
 func (r *Reader) Reset(rs io.Reader) {
-	r.scan = Scan(rs)
+	r.digest.Reset()
+	r.scan = Scan(io.TeeReader(rs, r.digest))
+}
+
+func (r *Reader) IndexSum() ([]*Index, string) {
+	return r.indexSum()
 }
 
 func (r *Reader) Index() []*Index {
+	ix, _ := r.indexSum()
+	return ix
+}
+
+func (r *Reader) indexSum() ([]*Index, string) {
 	var (
 		is   []*Index
 		curr int
@@ -548,7 +563,7 @@ func (r *Reader) Index() []*Index {
 		curr += i.Size
 		is = append(is, &i)
 	}
-	return is
+	return is, fmt.Sprintf("%x", r.digest.Sum(nil))
 }
 
 func (r *Reader) Gaps() <-chan *Gap {

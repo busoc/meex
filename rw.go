@@ -8,7 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type SortFunc func([]*Index) []*Index
@@ -27,19 +30,26 @@ func Join(d Decoder, rs ...io.ReadSeeker) (io.Reader, error) {
 func JoinWith(d Decoder, f SortFunc, rs ...io.ReadSeeker) (io.Reader, error) {
 	ms := make(map[string]io.ReadSeeker)
 	index := make([]*Index, 0, 300*len(rs)*4)
-	digest := md5.New()
+
+	var (
+		group errgroup.Group
+		mu    sync.Mutex
+	)
 	for _, r := range rs {
-		ix := NewReader(io.TeeReader(r, digest), d).Index()
-		sum := fmt.Sprintf("%x", digest.Sum(nil))
-		for _, i := range ix {
-			i.Sum = sum
-			index = append(index, i)
-		}
-		if _, err := r.Seek(0, io.SeekStart); err != nil {
-			return nil, err
-		}
-		ms[sum] = r
-		digest.Reset()
+		rt := r
+		group.Go(func() error {
+			ix, sum, err := indexReader(rt, d)
+			if err == nil {
+				mu.Lock()
+				defer mu.Unlock()
+				index = append(index, ix...)
+				ms[sum] = rt
+			}
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
 	if f == nil {
 		sort.Slice(index, func(i, j int) bool {
@@ -49,6 +59,19 @@ func JoinWith(d Decoder, f SortFunc, rs ...io.ReadSeeker) (io.Reader, error) {
 		index = f(index)
 	}
 	return &joiner{rs: ms, index: index}, nil
+}
+
+func indexReader(r io.ReadSeeker, d Decoder) ([]*Index, string, error) {
+	ix, sum := NewReader(r, d).IndexSum()
+	index := make([]*Index, len(ix))
+	for j, i := range ix {
+		i.Sum = sum
+		index[j] = i
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, sum, err
+	}
+	return index, sum, nil
 }
 
 func (j *joiner) Read(bs []byte) (int, error) {
