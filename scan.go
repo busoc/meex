@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"hash/adler32"
 	"io"
 	"os"
 	"time"
@@ -53,6 +54,8 @@ type Packet interface {
 	Sequence() int
 	Diff(Packet) *Gap
 
+	PacketInfo() *Info
+
 	Timestamp() time.Time
 	Reception() time.Time
 
@@ -70,6 +73,14 @@ type DecoderFunc func([]byte) (Packet, error)
 
 func (d DecoderFunc) Decode(bs []byte) (Packet, error) {
 	return d(bs)
+}
+
+type Info struct {
+	Id       int       `json:"id"`
+	Sequence int       `json:"sequence"`
+	Size     int       `json:"length"`
+	AcqTime  time.Time `json:"dtstamp"`
+	Sum      uint32    `json:"checksum"`
 }
 
 type Gap struct {
@@ -291,6 +302,16 @@ func DecodeTM() Decoder {
 	return DecoderFunc(f)
 }
 
+func (t *TMPacket) PacketInfo() *Info {
+	return &Info{
+		Id:       t.CCSDS.Apid(),
+		Sequence: t.Sequence(),
+		Size:     len(t.Payload) - PTHHeaderLen,
+		AcqTime:  t.Timestamp(),
+		Sum:      adler32.Checksum(t.Payload[PTHHeaderLen:]),
+	}
+}
+
 func (t *TMPacket) Timestamp() time.Time {
 	return t.ESA.Acquisition
 }
@@ -440,6 +461,16 @@ func DecodeVMU() Decoder {
 		return &p, nil
 	}
 	return DecoderFunc(f)
+}
+
+func (v *VMUPacket) PacketInfo() *Info {
+	return &Info{
+		Id:       int(v.VMU.Channel),
+		Sequence: int(v.VMU.Sequence),
+		Size:     len(v.Payload) - HRDLHeaderLen,
+		AcqTime:  v.VMU.Acquisition,
+		Sum:      adler32.Checksum(v.Payload[HRDLHeaderLen:]),
+	}
 }
 
 func (v *VMUPacket) Timestamp() time.Time {

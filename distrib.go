@@ -67,18 +67,21 @@ type route struct {
 }
 
 func setupRoutes(datadir, kind string) (*mux.Router, error) {
-	var d Decoder
+	var (
+		d   Decoder
+		cut int
+	)
 	switch strings.ToLower(kind) {
 	default:
 		return nil, fmt.Errorf("unknown/unsupported packet type: %s", kind)
 	case "hrd":
-		d = DecodeVMU()
+		d, cut = DecodeVMU(), HRDLHeaderLen
 	case "tm":
-		d = DecodeTM()
+		d, cut = DecodeTM(), PTHHeaderLen
 	}
 	routes := []*route{
-		// {Name: "meex.json.list", Path: "/packets/", Method: http.MethodGet, Mime: "application/json", Handle: handleList(datadir, d)},
-		// {Name: "meex.csv.list", Path: "/packets/", Method: http.MethodGet, Mime: "text/csv", Handle: handleList(datadir, d)},
+		{Name: "meex.json.list", Path: "/packets/", Method: http.MethodGet, Mime: "application/json", Handle: handleList(datadir, d)},
+		{Name: "meex.csv.list", Path: "/packets/", Method: http.MethodGet, Mime: "text/csv", Handle: handleList(datadir, d)},
 		{Name: "meex.json.gaps", Path: "/gaps/", Method: http.MethodGet, Mime: "application/json", Handle: handleGaps(datadir, d)},
 		{Name: "meex.csv.gaps", Path: "/gaps/", Method: http.MethodGet, Mime: "text/csv", Handle: handleGaps(datadir, d)},
 		{Name: "meex.json.stats", Path: "/stats/", Method: http.MethodGet, Mime: "application/json", Handle: handleStatus(datadir, d)},
@@ -97,7 +100,28 @@ func setupRoutes(datadir, kind string) (*mux.Router, error) {
 		}
 		rx.Handle(r.Path, f).Name(r.Name).Headers("Accept", r.Mime).Methods(r.Method)
 	}
+	rx.Handle("/archives/", handleDownloads(datadir, cut, d)).Name("meex.downloads").Headers("Accept", "application/octet-stream").Methods(http.MethodGet)
 	return rx, nil
+}
+
+func handleDownloads(datadir string, cut int, d Decoder) http.Handler {
+	f := func(w http.ResponseWriter, r *http.Request) {
+		fd, td, err := timeRange(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		queue := Walk(ListPaths(datadir, fd, td), d)
+		ws := NoDuplicate(w)
+		for p := range queue {
+			bs := p.Bytes()
+			if _, err := ws.Write(bs[cut:]); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	return http.HandlerFunc(f)
 }
 
 func handleStatus(datadir string, d Decoder) Handler {
@@ -157,7 +181,16 @@ func handleGaps(datadir string, d Decoder) Handler {
 
 func handleList(datadir string, d Decoder) Handler {
 	return func(r *http.Request) (interface{}, error) {
-		return nil, nil
+		fd, td, err := timeRange(r)
+		if err != nil {
+			return nil, err
+		}
+		queue := Walk(ListPaths(datadir, fd, td), d)
+		var ds []*Info
+		for p := range queue {
+			ds = append(ds, p.PacketInfo())
+		}
+		return ds, nil
 	}
 }
 
@@ -248,6 +281,20 @@ func negociateCSV(h Handler) http.Handler {
 					strconv.Itoa(c.Last),
 					strconv.Itoa(c.First),
 					strconv.Itoa(c.Missing()),
+				}
+				if err := ws.Write(row); err != nil {
+					break
+				}
+			}
+		case []*Info:
+			var row []string
+			for _, c := range ds {
+				row = []string{
+					strconv.Itoa(c.Id),
+					c.AcqTime.Format(time.RFC3339),
+					strconv.Itoa(c.Sequence),
+					strconv.Itoa(c.Size),
+					strconv.FormatUint(uint64(c.Sum), 10),
 				}
 				if err := ws.Write(row); err != nil {
 					break
