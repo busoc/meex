@@ -111,7 +111,14 @@ func handleDownloads(datadir string, cut int, d Decoder) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		queue := Walk(ListPaths(datadir, fd, td), d)
+    var ds Decoder = d
+    q := r.URL.Query()
+    if i, err := strconv.Atoi(q.Get("id")); err != nil && q.Get("id") != "" {
+      http.Error(w, err.Error(), http.StatusBadRequest)
+    } else {
+      ds = DecodeById(i, d)
+    }
+		queue := Walk(ListPaths(datadir, fd, td), ds)
 		ws := NoDuplicate(w)
 		for p := range queue {
 			bs := p.Bytes()
