@@ -13,15 +13,6 @@ import (
 )
 
 var commands = []*cli.Command{
-	// {
-	// 	Usage: "distrib",
-	// 	Alias: []string{"server"},
-	// 	Short: "allow access to archives via a REST API",
-	// },
-	// {
-	// 	Usage: "dump",
-	// 	Short: "dumps parameters from packets into RT file(s)",
-	// },
 	distribCommand,
 	sortCommand,
 	mixCommand,
@@ -35,7 +26,6 @@ var commands = []*cli.Command{
 	dispatchCommand,
 	shuffleCommand,
 	joinCommand,
-	// mergeCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive
