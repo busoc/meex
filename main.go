@@ -22,6 +22,7 @@ var commands = []*cli.Command{
 	// 	Usage: "dump",
 	// 	Short: "dumps parameters from packets into RT file(s)",
 	// },
+	distribCommand,
 	sortCommand,
 	mixCommand,
 	scanCommand,
