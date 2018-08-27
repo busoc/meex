@@ -73,18 +73,19 @@ func (d DecoderFunc) Decode(bs []byte) (Packet, error) {
 }
 
 type Gap struct {
-	Id     int
-	Starts time.Time
-	Ends   time.Time
-	Last   int
-	First  int
+	Id     int       `json:"id"`
+	Starts time.Time `json:"dtstart"`
+	Ends   time.Time `json:"dtend"`
+	Last   int       `json:"last"`
+	First  int       `json:"first"`
 }
 
 type Coze struct {
-	Size    uint64
-	Count   uint64
-	Missing uint64
-	Error   uint64
+	Id      int    `json:"id"`
+	Size    uint64 `json:"bytes"`
+	Count   uint64 `json:"count"`
+	Missing uint64 `json:"missing"`
+	Error   uint64 `json:"error"`
 }
 
 func (c *Coze) Corrupted() float64 {
