@@ -30,7 +30,7 @@ var scanCommand = &cli.Command{
 }
 
 var indexCommand = &cli.Command{
-	Usage: "index [-k] <rt,...>",
+	Usage: "index [-q] [-k] <rt,...>",
 	Short: "create an index of packets found in RT files",
 	Run:   runIndex,
 }
@@ -38,24 +38,34 @@ var indexCommand = &cli.Command{
 func runIndex(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
+	quiet := cmd.Flag.Bool("q", false, "quiet")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
 	delta := GPS.Sub(UNIX)
 	var (
-		ix   uint64
-		prev time.Time
+		ix    uint64
+		count uint64
+		data  uint64
+		prev  time.Time
 	)
+	now := time.Now()
 	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
+		count++
 		t := p.Timestamp().Add(delta)
 		if prev.IsZero() || (t.Minute()%5 == 0 && t.Sub(prev) >= Five) {
 			prev = t
 			ix = 0
 		}
 		size := p.Len()
-		log.Printf("%10d | %s | %9d | %x", ix, t.Format(TimeFormat), size, md5.Sum(p.Bytes()))
+		if !*quiet {
+			log.Printf("%10d | %s | %9d | %x", ix, t.Format(TimeFormat), size, md5.Sum(p.Bytes()))
+		}
 		ix += uint64(size)
+		data += uint64(size)
 	}
+	elapsed := time.Since(now)
+	log.Printf("%d packets (%dMB) found in %s (%.2fMB/s)", count, data>>20, elapsed, float64(data>>20)/elapsed.Seconds())
 	return nil
 }
 
