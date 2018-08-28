@@ -13,12 +13,14 @@ const RT = "rt_%02d_%02d.dat"
 func ListPaths(dir string, fd, td time.Time) []string {
 	var ds []string
 	for fd.Before(td) {
-		min := fd.Minute()
-		d := filepath.Join(timePath(dir, fd), fmt.Sprintf(RT, min, min+4))
-		if i, err := os.Stat(d); err == nil && i.Mode().IsRegular() {
-			ds = append(ds, d)
-		}
-		fd = fd.Add(Five)
+		ds = append(ds, timePath(dir, fd))
+		fd = fd.Add(time.Hour)
+		// min := fd.Minute()
+		// d := filepath.Join(, fmt.Sprintf(RT, min, min+4))
+		// if i, err := os.Stat(d); err == nil && i.Mode().IsRegular() {
+		// 	ds = append(ds, d)
+		// }
+		// fd = fd.Add(Five)
 	}
 	return ds
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/midbel/cli"
 	"github.com/midbel/toml"
+	"golang.org/x/sync/errgroup"
 )
 
 const MaxInterval = time.Hour * 24
@@ -62,7 +64,7 @@ type route struct {
 	Handle Handler
 	Name   string
 	Path   string
-	Mime   string
+	Accept string
 	Method string
 }
 
@@ -80,17 +82,17 @@ func setupRoutes(datadir, kind string) (*mux.Router, error) {
 		d, cut = DecodeTM(), PTHHeaderLen
 	}
 	routes := []*route{
-		{Name: "meex.json.list", Path: "/packets/", Method: http.MethodGet, Mime: "application/json", Handle: handleList(datadir, d)},
-		{Name: "meex.csv.list", Path: "/packets/", Method: http.MethodGet, Mime: "text/csv", Handle: handleList(datadir, d)},
-		{Name: "meex.json.gaps", Path: "/gaps/", Method: http.MethodGet, Mime: "application/json", Handle: handleGaps(datadir, d)},
-		{Name: "meex.csv.gaps", Path: "/gaps/", Method: http.MethodGet, Mime: "text/csv", Handle: handleGaps(datadir, d)},
-		{Name: "meex.json.stats", Path: "/stats/", Method: http.MethodGet, Mime: "application/json", Handle: handleStatus(datadir, d)},
-		{Name: "meex.csv.stats", Path: "/stats/", Method: http.MethodGet, Mime: "text/csv", Handle: handleStatus(datadir, d)},
+		{Name: "meex.json.list", Path: "/packets/", Method: http.MethodGet, Accept: "application/json", Handle: handleList(datadir, d)},
+		{Name: "meex.csv.list", Path: "/packets/", Method: http.MethodGet, Accept: "text/csv", Handle: handleList(datadir, d)},
+		{Name: "meex.json.gaps", Path: "/gaps/", Method: http.MethodGet, Accept: "application/json", Handle: handleGaps(datadir, d)},
+		{Name: "meex.csv.gaps", Path: "/gaps/", Method: http.MethodGet, Accept: "text/csv", Handle: handleGaps(datadir, d)},
+		{Name: "meex.json.stats", Path: "/stats/", Method: http.MethodGet, Accept: "application/json", Handle: handleStatus(datadir, d)},
+		{Name: "meex.csv.stats", Path: "/stats/", Method: http.MethodGet, Accept: "text/csv", Handle: handleStatus(datadir, d)},
 	}
 	rx := mux.NewRouter()
 	for _, r := range routes {
 		var f http.Handler
-		switch r.Mime {
+		switch r.Accept {
 		default:
 			continue
 		case "application/json":
@@ -98,7 +100,7 @@ func setupRoutes(datadir, kind string) (*mux.Router, error) {
 		case "text/csv":
 			f = negociateCSV(r.Handle)
 		}
-		rx.Handle(r.Path, f).Name(r.Name).Headers("Accept", r.Mime).Methods(r.Method)
+		rx.Handle(r.Path, f).Name(r.Name).Headers("Accept", r.Accept).Methods(r.Method)
 	}
 	rx.Handle("/archives/", handleDownloads(datadir, cut, d)).Name("meex.downloads").Headers("Accept", "application/octet-stream").Methods(http.MethodGet)
 	return rx, nil
@@ -106,7 +108,7 @@ func setupRoutes(datadir, kind string) (*mux.Router, error) {
 
 func handleDownloads(datadir string, cut int, d Decoder) http.Handler {
 	f := func(w http.ResponseWriter, r *http.Request) {
-		fd, td, err := timeRange(r)
+		fd, td, err := timeRange(r, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -133,7 +135,7 @@ func handleDownloads(datadir string, cut int, d Decoder) http.Handler {
 
 func handleStatus(datadir string, d Decoder) Handler {
 	return func(r *http.Request) (interface{}, error) {
-		fd, td, err := timeRange(r)
+		fd, td, err := timeRange(r, MaxInterval)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +159,7 @@ func handleStatus(datadir string, d Decoder) Handler {
 			}
 			gs[id], ps[id] = c, p
 		}
-		var rs []*Coze
+		var rs cozes
 		for _, c := range gs {
 			rs = append(rs, c)
 		}
@@ -167,11 +169,11 @@ func handleStatus(datadir string, d Decoder) Handler {
 
 func handleGaps(datadir string, d Decoder) Handler {
 	return func(r *http.Request) (interface{}, error) {
-		fd, td, err := timeRange(r)
+		fd, td, err := timeRange(r, MaxInterval)
 		if err != nil {
 			return nil, err
 		}
-		var ds []*Gap
+		var ds gaps
 		queue := Walk(ListPaths(datadir, fd, td), d)
 		gs := make(map[int]Packet)
 		for curr := range queue {
@@ -188,20 +190,35 @@ func handleGaps(datadir string, d Decoder) Handler {
 
 func handleList(datadir string, d Decoder) Handler {
 	return func(r *http.Request) (interface{}, error) {
-		fd, td, err := timeRange(r)
+		fd, td, err := timeRange(r, 0)
 		if err != nil {
 			return nil, err
 		}
-		queue := Walk(ListPaths(datadir, fd, td), d)
-		var ds []*Info
-		for p := range queue {
-			ds = append(ds, p.PacketInfo())
+		q := make(chan *Info, 1000)
+		go func() {
+			defer close(q)
+			var group errgroup.Group
+			for fd.Before(td) {
+				f, t := fd, fd.Add(time.Hour*4)
+				group.Go(func() error {
+					for p := range Walk(ListPaths(datadir, f, t), d) {
+						q <- p.PacketInfo()
+					}
+					return nil
+				})
+				fd = t
+			}
+			group.Wait()
+		}()
+		var ds infos
+		for i := range q {
+			ds = append(ds, i)
 		}
 		return ds, nil
 	}
 }
 
-func timeRange(r *http.Request) (fd time.Time, td time.Time, err error) {
+func timeRange(r *http.Request, delta time.Duration) (fd time.Time, td time.Time, err error) {
 	q := r.URL.Query()
 	if fd, err = time.Parse(time.RFC3339, q.Get("dtstart")); q.Get("dtstart") != "" && err != nil {
 		return
@@ -218,7 +235,7 @@ func timeRange(r *http.Request) (fd time.Time, td time.Time, err error) {
 		err = fmt.Errorf("both dtstart and dtend should be provided")
 		return
 	}
-	if td.Before(fd) || td.Sub(fd) > MaxInterval {
+	if td.Before(fd) || (delta > 0 && td.Sub(fd) > delta) {
 		err = fmt.Errorf("invalid interval")
 		return
 	}
@@ -246,7 +263,72 @@ func negociateJSON(h Handler) http.Handler {
 	return http.HandlerFunc(f)
 }
 
+type cozes []*Coze
+
+func (cs cozes) exportCSV(w io.Writer) error {
+	ws := csv.NewWriter(w)
+	for _, c := range cs {
+		row := []string{
+			strconv.Itoa(c.Id),
+			strconv.FormatUint(c.Size, 10),
+			strconv.FormatUint(c.Count, 10),
+			strconv.FormatUint(c.Missing, 10),
+			strconv.FormatUint(c.Error, 10),
+		}
+		if err := ws.Write(row); err != nil {
+			return err
+		}
+	}
+	ws.Flush()
+	return ws.Error()
+}
+
+type gaps []*Gap
+
+func (gs gaps) exportCSV(w io.Writer) error {
+	ws := csv.NewWriter(w)
+	for _, c := range gs {
+		row := []string{
+			strconv.Itoa(c.Id),
+			c.Starts.Format(time.RFC3339),
+			c.Ends.Format(time.RFC3339),
+			strconv.FormatFloat(c.Duration().Seconds(), 'f', -1, 64),
+			strconv.Itoa(c.Last),
+			strconv.Itoa(c.First),
+			strconv.Itoa(c.Missing()),
+		}
+		if err := ws.Write(row); err != nil {
+			return err
+		}
+	}
+	ws.Flush()
+	return ws.Error()
+}
+
+type infos []*Info
+
+func (is infos) exportCSV(w io.Writer) error {
+	ws := csv.NewWriter(w)
+	for _, c := range is {
+		row := []string{
+			strconv.Itoa(c.Id),
+			c.AcqTime.Format(time.RFC3339),
+			strconv.Itoa(c.Sequence),
+			strconv.Itoa(c.Size),
+			strconv.FormatUint(uint64(c.Sum), 10),
+		}
+		if err := ws.Write(row); err != nil {
+			return err
+		}
+	}
+	ws.Flush()
+	return ws.Error()
+}
+
 func negociateCSV(h Handler) http.Handler {
+	type exporter interface {
+		exportCSV(io.Writer) error
+	}
 	f := func(w http.ResponseWriter, r *http.Request) {
 		ds, err := h(r)
 		if err != nil {
@@ -258,56 +340,12 @@ func negociateCSV(h Handler) http.Handler {
 			return
 		}
 		w.Header().Set("content-type", "text/csv")
-		ws := csv.NewWriter(w)
-		defer ws.Flush()
-		switch ds := ds.(type) {
-		default:
+		e, ok := ds.(exporter)
+		if !ok {
 			w.WriteHeader(http.StatusNotImplemented)
-		case []*Coze:
-			var row []string
-			for _, c := range ds {
-				row = []string{
-					strconv.Itoa(c.Id),
-					strconv.FormatUint(c.Size, 10),
-					strconv.FormatUint(c.Count, 10),
-					strconv.FormatUint(c.Missing, 10),
-					strconv.FormatUint(c.Error, 10),
-				}
-				if err := ws.Write(row); err != nil {
-					break
-				}
-			}
-		case []*Gap:
-			var row []string
-			for _, c := range ds {
-				row = []string{
-					strconv.Itoa(c.Id),
-					c.Starts.Format(time.RFC3339),
-					c.Ends.Format(time.RFC3339),
-					strconv.FormatFloat(c.Duration().Seconds(), 'f', -1, 64),
-					strconv.Itoa(c.Last),
-					strconv.Itoa(c.First),
-					strconv.Itoa(c.Missing()),
-				}
-				if err := ws.Write(row); err != nil {
-					break
-				}
-			}
-		case []*Info:
-			var row []string
-			for _, c := range ds {
-				row = []string{
-					strconv.Itoa(c.Id),
-					c.AcqTime.Format(time.RFC3339),
-					strconv.Itoa(c.Sequence),
-					strconv.Itoa(c.Size),
-					strconv.FormatUint(uint64(c.Sum), 10),
-				}
-				if err := ws.Write(row); err != nil {
-					break
-				}
-			}
+			return
 		}
+		e.exportCSV(w)
 	}
 	return http.HandlerFunc(f)
 }
