@@ -12,13 +12,13 @@ import (
 const Five = time.Minute * 5
 
 var sortCommand = &cli.Command{
-	Usage: "sort [-k] [-r] <source> <target>",
+	Usage: "sort [-k] <source> <target>",
 	Short: "sort packets found in a RT file",
 	Run:   runSort,
 }
 
 var joinCommand = &cli.Command{
-	Usage: "merge [-k] [-r] [-s] [-t] <file>",
+	Usage: "merge [-k] [-s] [-t] <file>",
 	Alias: []string{"join"},
 	Short: "merge packets into RT file(s)",
 	Run:   runJoin,
