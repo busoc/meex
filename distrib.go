@@ -18,6 +18,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type InvalidRequestError string
+
+func (i InvalidRequestError) Error() string {
+	return string(i)
+}
+
 const MaxInterval = time.Hour * 24
 
 var distribCommand = &cli.Command{
@@ -116,7 +122,7 @@ func handleDownloads(datadir string, cut int, d Decoder) http.Handler {
 		var ds Decoder = d
 		q := r.URL.Query()
 		if i, err := strconv.Atoi(q.Get("id")); err != nil && q.Get("id") != "" {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "bad format id query parameter", http.StatusBadRequest)
 		} else {
 			ds = DecodeById(i, d)
 		}
@@ -221,9 +227,11 @@ func handleList(datadir string, d Decoder) Handler {
 func timeRange(r *http.Request, delta time.Duration) (fd time.Time, td time.Time, err error) {
 	q := r.URL.Query()
 	if fd, err = time.Parse(time.RFC3339, q.Get("dtstart")); q.Get("dtstart") != "" && err != nil {
+		err = InvalidRequestError("bad format dtstart query parameter")
 		return
 	}
 	if td, err = time.Parse(time.RFC3339, q.Get("dtend")); q.Get("dtend") != "" && err != nil {
+		err = InvalidRequestError("bad format dtend query parameter")
 		return
 	}
 
@@ -232,11 +240,11 @@ func timeRange(r *http.Request, delta time.Duration) (fd time.Time, td time.Time
 		fd = td.Add(time.Hour * time.Duration(-24))
 	}
 	if fd.IsZero() || td.IsZero() {
-		err = fmt.Errorf("both dtstart and dtend should be provided")
+		err = InvalidRequestError("both dtstart and dtend should be provided")
 		return
 	}
 	if td.Before(fd) || (delta > 0 && td.Sub(fd) > delta) {
-		err = fmt.Errorf("invalid interval")
+		err = InvalidRequestError("invalid interval")
 		return
 	}
 	err = nil
@@ -246,11 +254,20 @@ func timeRange(r *http.Request, delta time.Duration) (fd time.Time, td time.Time
 	return
 }
 
+func codeFromError(err error) int {
+	switch err.(type) {
+	case InvalidRequestError:
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func negociateJSON(h Handler) http.Handler {
 	f := func(w http.ResponseWriter, r *http.Request) {
 		ds, err := h(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), codeFromError(err))
 			return
 		}
 		if ds == nil {
@@ -259,6 +276,31 @@ func negociateJSON(h Handler) http.Handler {
 		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(ds)
+	}
+	return http.HandlerFunc(f)
+}
+
+func negociateCSV(h Handler) http.Handler {
+	type exporter interface {
+		exportCSV(io.Writer) error
+	}
+	f := func(w http.ResponseWriter, r *http.Request) {
+		ds, err := h(r)
+		if err != nil {
+			http.Error(w, err.Error(), codeFromError(err))
+			return
+		}
+		if ds == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("content-type", "text/csv")
+		e, ok := ds.(exporter)
+		if !ok {
+			w.WriteHeader(http.StatusNotImplemented)
+			return
+		}
+		e.exportCSV(w)
 	}
 	return http.HandlerFunc(f)
 }
@@ -323,29 +365,4 @@ func (is infos) exportCSV(w io.Writer) error {
 	}
 	ws.Flush()
 	return ws.Error()
-}
-
-func negociateCSV(h Handler) http.Handler {
-	type exporter interface {
-		exportCSV(io.Writer) error
-	}
-	f := func(w http.ResponseWriter, r *http.Request) {
-		ds, err := h(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if ds == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.Header().Set("content-type", "text/csv")
-		e, ok := ds.(exporter)
-		if !ok {
-			w.WriteHeader(http.StatusNotImplemented)
-			return
-		}
-		e.exportCSV(w)
-	}
-	return http.HandlerFunc(f)
 }
