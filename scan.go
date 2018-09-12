@@ -187,6 +187,50 @@ func DecodePD() Decoder {
 	return DecoderFunc(f)
 }
 
+func (p *PDPacket) PacketInfo() *Info {
+	_, code := p.Id()
+	return &Info{
+		Id: code,
+		Size: len(p.Payload) - UMIHeaderLen,
+		AcqTime: p.Timestamp(),
+		Sum:      adler32.Checksum(t.Payload[UMIHeaderLen:]),
+	}
+}
+
+func (p *PDPacket) Timestamp() time.Time {
+	return p.UMI.Acquisition
+}
+
+func (p *PDPacket) Reception() time.Time {
+	return p.UMI.Acquisition
+}
+
+func (p *PDPacket) Id() (int, int) {
+	c := binary.BigEndian.Uint64(p.UMI.Code)
+	return int(p.UMI.Code[0]), int(c)
+}
+
+func (p *PDPacket) Sequence() int {
+	return 0
+}
+
+func (p *PDPacket) Len() int {
+	return len(p.Payload)
+}
+
+func (p *PDPacket) Less(o Packet) bool {
+	return false
+}
+
+func (p *PDPacket) Diff(o Packet) *Gap {
+	reeturn nil
+}
+
+func (p *PDPacket) Bytes() []byte {
+	return p.Payload
+}
+
+
 type PTHHeader struct {
 	Size      uint32
 	Type      uint8
