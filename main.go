@@ -76,6 +76,8 @@ func (k *Kind) Set(v string) error {
 		return fmt.Errorf("unrecognized packet decoder type")
 	case "":
 		return fmt.Errorf("no packet type provided")
+	case "pd", "pp", "pdh":
+		k.Decod = DecodePD()
 	case "tm", "pth", "pt":
 		k.Decod = DecodeTM()
 		k.Sort = SortTMIndex

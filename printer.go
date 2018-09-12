@@ -46,6 +46,8 @@ func (pt logPrinter) Print(p Packet, delta time.Duration) error {
 		printVMUPacket(pt.logger, p, delta)
 	case *TMPacket:
 		printTMPacket(pt.logger, p, delta)
+	case *PDPacket:
+		printPDPacket(pt.logger, p, delta)
 	}
 	return nil
 }
@@ -120,4 +122,11 @@ func printTMPacket(logger *log.Logger, p *TMPacket, delta time.Duration) {
 
 	x := p.Reception().Sub(p.Timestamp())
 	logger.Printf(row, p.Sequence(), p.Len(), p.CCSDS.Apid(), a, r, md5.Sum(p.Bytes()), x)
+}
+
+func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
+	const row = "%s | %x | %x | %x | %3d | % x"
+	a := p.Timestamp().Add(delta).Format(TimeFormat)
+	ds := p.Payload[len(p.Payload)-int(p.UMI.Len):]
+	logger.Printf(row, a, p.UMI.State, p.UMI.Code, p.UMI.Orbit, p.UMI.Len, ds)
 }

@@ -150,7 +150,7 @@ func (u *UMIHeader) UnmarshalBinary(bs []byte) error {
 	)
 	r := bytes.NewReader(bs)
 	binary.Read(r, binary.LittleEndian, &u.Size)
-	binary.Read(r, binary.LittleEndian, &u.State)
+	binary.Read(r, binary.BigEndian, &u.State)
 	io.ReadFull(r, u.Orbit[:])
 	io.ReadFull(r, u.Code[:])
 	binary.Read(r, binary.BigEndian, &u.Type)
@@ -181,8 +181,7 @@ func DecodePD() Decoder {
 			UMI:     &u,
 			Payload: bs,
 		}
-		_ = p
-		return nil, nil
+		return &p, nil
 	}
 	return DecoderFunc(f)
 }
@@ -190,10 +189,10 @@ func DecodePD() Decoder {
 func (p *PDPacket) PacketInfo() *Info {
 	_, code := p.Id()
 	return &Info{
-		Id: code,
-		Size: len(p.Payload) - UMIHeaderLen,
+		Id:      code,
+		Size:    len(p.Payload) - UMIHeaderLen,
 		AcqTime: p.Timestamp(),
-		Sum:      adler32.Checksum(t.Payload[UMIHeaderLen:]),
+		Sum:     adler32.Checksum(p.Payload[UMIHeaderLen:]),
 	}
 }
 
@@ -206,7 +205,7 @@ func (p *PDPacket) Reception() time.Time {
 }
 
 func (p *PDPacket) Id() (int, int) {
-	c := binary.BigEndian.Uint64(p.UMI.Code)
+	c := binary.BigEndian.Uint64(p.UMI.Code[:])
 	return int(p.UMI.Code[0]), int(c)
 }
 
@@ -223,13 +222,12 @@ func (p *PDPacket) Less(o Packet) bool {
 }
 
 func (p *PDPacket) Diff(o Packet) *Gap {
-	reeturn nil
+	return nil
 }
 
 func (p *PDPacket) Bytes() []byte {
 	return p.Payload
 }
-
 
 type PTHHeader struct {
 	Size      uint32
