@@ -126,7 +126,7 @@ func reportCounts(queue <-chan Packet) {
 	var z Coze
 	for c, s := range gs {
 		z.Update(s)
-		log.Printf("%4d | %8d | %8d | %8dMB | %8d", c, s.Count, s.Missing, s.Size>>20, s.Error)
+		log.Printf("%5d | %8d | %8d | %8dMB | %8d", c, s.Count, s.Missing, s.Size>>20, s.Error)
 	}
-	log.Printf("%4d | %8d | %8d | %8dMB | %8d", 0, z.Count, z.Missing, z.Size>>20, z.Error)
+	log.Printf("total | %8d | %8d | %8dMB | %8d", z.Count, z.Missing, z.Size>>20, z.Error)
 }

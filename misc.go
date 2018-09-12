@@ -116,11 +116,8 @@ func runScan(cmd *cli.Command, args []string) error {
 	var size, count uint64
 	for _, a := range cmd.Flag.Args() {
 		filepath.Walk(a, func(p string, i os.FileInfo, err error) error {
-			if err != nil {
+			if err != nil || i.IsDir() {
 				return err
-			}
-			if i.IsDir() {
-				return nil
 			}
 			sc, err := ScanFile(p)
 			if err != nil {
