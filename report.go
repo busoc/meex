@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"log"
 	"time"
 
@@ -29,6 +30,7 @@ func runList(cmd *cli.Command, args []string) error {
 	format := cmd.Flag.String("f", "", "format")
 	id := cmd.Flag.Int("i", 0, "")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
+	erronly := cmd.Flag.Bool("e", false, "error only")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -45,6 +47,9 @@ func runList(cmd *cli.Command, args []string) error {
 	}
 	queue := Walk(cmd.Flag.Args(), DecodeById(*id, kind.Decod))
 	for p := range queue {
+		if *erronly && !p.Error() {
+			continue
+		}
 		if err := pt.Print(p, delta); err != nil {
 			return err
 		}
@@ -56,7 +61,7 @@ func runReport(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
-	aggr := cmd.Flag.Bool("a", false, "aggregate report per channel")
+	mode := cmd.Flag.String("m", "", "mode")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -66,12 +71,41 @@ func runReport(cmd *cli.Command, args []string) error {
 	}
 
 	queue := Walk(cmd.Flag.Args(), kind.Decod)
-	if *aggr {
+	switch *mode {
+	default:
 		reportCounts(queue)
-	} else {
+	case "gaps":
 		reportGaps(queue, delta)
+	case "error", "err":
+		reportErrors(queue)
 	}
 	return nil
+}
+
+func reportErrors(queue <-chan Packet) {
+	var err, total uint64
+	cs := make(map[uint64]uint64)
+
+	n := time.Now()
+	for p := range queue {
+		total++
+		if !p.Error() {
+			continue
+		}
+		err++
+		switch p := p.(type) {
+		case *VMUPacket:
+			cs[uint64(p.HRH.Error)]++
+		case *PDPacket:
+			e := binary.BigEndian.Uint32(p.UMI.Orbit[:])
+			cs[uint64(e)]++
+		}
+	}
+	elapsed := time.Since(n)
+	for e, c := range cs {
+		log.Printf("%04x: %8d", e, c)
+	}
+	log.Printf("%d/%d errors found (%s)", err, total, elapsed)
 }
 
 func reportGaps(queue <-chan Packet, delta time.Duration) {
@@ -118,7 +152,7 @@ func reportCounts(queue <-chan Packet) {
 		if g := p.Diff(ps[id]); g != nil {
 			c.Missing += uint64(g.Missing())
 		}
-		if p, ok := p.(*VMUPacket); ok && p.HRH.Error != 0 {
+		if p.Error() {
 			c.Error++
 		}
 		gs[id], ps[id] = c, p
