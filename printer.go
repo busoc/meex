@@ -92,6 +92,16 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 			p.PTH.Reception.Add(delta).Format(TimeFormat),
 			fmt.Sprintf("%x", md5.Sum(p.Payload)),
 		}
+	case *PDPacket:
+		row = []string{
+			p.Timestamp().Format(TimeFormat),
+			fmt.Sprintf("%x", p.UMI.Code),
+			p.UMI.State.String(),
+			p.UMI.Type.String(),
+			strconv.Itoa(p.Len()),
+			fmt.Sprintf("%x", p.Payload[len(p.Payload)-int(p.UMI.Len):]),
+			fmt.Sprintf("%x", md5.Sum(p.Payload)),
+		}
 	}
 	return c.writer.Write(row)
 }
