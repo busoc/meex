@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"log"
 	"time"
 
@@ -97,8 +96,7 @@ func reportErrors(queue <-chan Packet) {
 		case *VMUPacket:
 			cs[uint64(p.HRH.Error)]++
 		case *PDPacket:
-			e := binary.BigEndian.Uint32(p.UMI.Orbit[:])
-			cs[uint64(e)]++
+			cs[uint64(p.UMI.Orbit)]++
 		}
 	}
 	elapsed := time.Since(n)

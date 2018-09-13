@@ -197,10 +197,12 @@ func (u UMIValueType) String() string {
 	}
 }
 
+const UMICodeLen = 6
+
 type UMIHeader struct {
 	Size        uint32
-	Code        [6]byte
-	Orbit       [4]byte
+	Code        [UMICodeLen]byte
+	Orbit       uint32
 	State       UMIPacketState
 	Type        UMIValueType
 	Len         uint16
@@ -219,7 +221,7 @@ func (u *UMIHeader) UnmarshalBinary(bs []byte) error {
 	r := bytes.NewReader(bs)
 	binary.Read(r, binary.LittleEndian, &u.Size)
 	binary.Read(r, binary.BigEndian, &u.State)
-	io.ReadFull(r, u.Orbit[:])
+	binary.Read(r, binary.BigEndian, &u.Orbit)
 	io.ReadFull(r, u.Code[:])
 	binary.Read(r, binary.BigEndian, &u.Type)
 	binary.Read(r, binary.BigEndian, &u.Unit)
@@ -255,8 +257,7 @@ func DecodePD() Decoder {
 }
 
 func (p *PDPacket) Error() bool {
-	e := binary.BigEndian.Uint32(p.UMI.Orbit[:])
-	return e != 0
+	return p.UMI.Orbit != 0
 }
 
 func (p *PDPacket) PacketInfo() *Info {
