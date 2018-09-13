@@ -261,7 +261,7 @@ func (p *PDPacket) Error() bool {
 }
 
 func (p *PDPacket) PacketInfo() *Info {
-	_, code := p.Id()
+	code, _ := p.Id()
 	return &Info{
 		Id:      code,
 		Size:    len(p.Payload) - UMIHeaderLen,
@@ -279,8 +279,9 @@ func (p *PDPacket) Reception() time.Time {
 }
 
 func (p *PDPacket) Id() (int, int) {
-	c := binary.BigEndian.Uint64(p.UMI.Code[:])
-	return int(p.UMI.Code[0]), int(c)
+	high := uint64(binary.BigEndian.Uint16(p.UMI.Code[:2])) << 32
+	low := uint64(binary.BigEndian.Uint32(p.UMI.Code[2:]))
+	return int(high | low), int(p.UMI.Code[0])
 }
 
 func (p *PDPacket) Sequence() int {
@@ -292,11 +293,35 @@ func (p *PDPacket) Len() int {
 }
 
 func (p *PDPacket) Less(o Packet) bool {
-	return false
+	if p.Timestamp().Before(o.Timestamp()) {
+		return true
+	}
+	pc, _ := p.Id()
+	oc, _ := p.Id()
+	return pc < oc
 }
 
 func (p *PDPacket) Diff(o Packet) *Gap {
-	return nil
+	if _, ok := o.(*PDPacket); o == nil || !ok {
+		return nil
+	}
+	pc, _ := p.Id()
+	oc, _ := p.Id()
+	if pc != oc {
+		return nil
+	}
+	if o.Timestamp().After(p.Timestamp()) {
+		return o.Diff(p)
+	}
+	delta := p.Timestamp().Sub(o.Timestamp())
+	if delta <= time.Second {
+		return nil
+	}
+	return &Gap{
+		Id:     pc,
+		Starts: o.Timestamp(),
+		Ends:   p.Timestamp(),
+	}
 }
 
 func (p *PDPacket) Bytes() []byte {
@@ -517,11 +542,30 @@ func (h *HRDLHeader) UnmarshalBinary(bs []byte) error {
 	return nil
 }
 
+type VMUChannel uint8
+
+const (
+	ChannelVic1 VMUChannel = iota+1
+	ChannelVic2
+	ChannelLRSD
+)
+
+func (v VMUChannel) String() string {
+	switch v {
+	default:
+		return "***"
+	case ChannelVic1, ChannelVic2:
+		return "vic" + fmt.Sprint(int(v))
+	case ChannelLRSD:
+		return "lrsd"
+	}
+}
+
 type VMUHeader struct {
 	Word        uint32
 	Size        uint32
 	Origin      uint8
-	Channel     uint8
+	Channel     VMUChannel
 	Sequence    uint32
 	Acquisition time.Time
 }

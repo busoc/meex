@@ -10,7 +10,7 @@ import (
 const TimeFormat = "2006-01-02 15:04:05.000"
 
 var statsCommand = &cli.Command{
-	Usage: "stats [-g] [-k] [-a] <rt,...>",
+	Usage: "stats [-g] [-k] [-m] <rt,...>",
 	Alias: []string{"report"},
 	Short: "report status of packets into RT file(s)",
 	Run:   runReport,
@@ -61,6 +61,7 @@ func runReport(cmd *cli.Command, args []string) error {
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
 	mode := cmd.Flag.String("m", "", "mode")
+	duration := cmd.Flag.Duration("d", time.Second*5, "duration")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func runReport(cmd *cli.Command, args []string) error {
 	default:
 		reportCounts(queue)
 	case "gaps":
-		reportGaps(queue, delta)
+		reportGaps(queue, delta, *duration)
 	case "error", "err":
 		reportErrors(queue)
 	}
@@ -106,7 +107,7 @@ func reportErrors(queue <-chan Packet) {
 	log.Printf("%d/%d errors found (%s)", err, total, elapsed)
 }
 
-func reportGaps(queue <-chan Packet, delta time.Duration) {
+func reportGaps(queue <-chan Packet, delta, duration time.Duration) {
 	const row = "%4d | %s | %s | %6d | %6d | %8d | %s"
 
 	var (
@@ -127,6 +128,10 @@ func reportGaps(queue <-chan Packet, delta time.Duration) {
 			missing += uint64(g.Missing())
 			elapsed += g.Duration()
 
+			if g.Duration() < duration {
+				continue
+			}
+
 			p := g.Starts.Add(delta).Format(TimeFormat)
 			c := g.Ends.Add(delta).Format(TimeFormat)
 			log.Printf(row, g.Id, p, c, g.Last, g.First, g.Missing(), g.Duration())
@@ -137,6 +142,8 @@ func reportGaps(queue <-chan Packet, delta time.Duration) {
 }
 
 func reportCounts(queue <-chan Packet) {
+	const row = "%5d | %8d | %8d | %8dMB | %8d"
+
 	gs := make(map[int]*Coze)
 	ps := make(map[int]Packet)
 	for p := range queue {
@@ -158,7 +165,7 @@ func reportCounts(queue <-chan Packet) {
 	var z Coze
 	for c, s := range gs {
 		z.Update(s)
-		log.Printf("%5d | %8d | %8d | %8dMB | %8d", c, s.Count, s.Missing, s.Size>>20, s.Error)
+		log.Printf(row, c, s.Count, s.Missing, s.Size>>20, s.Error)
 	}
 	log.Printf("total | %8d | %8d | %8dMB | %8d", z.Count, z.Missing, z.Size>>20, z.Error)
 }

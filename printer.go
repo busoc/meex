@@ -65,19 +65,12 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 	var row []string
 	switch p := p.(type) {
 	case *VMUPacket:
-		var channel string
-		switch p.VMU.Channel {
-		case 1, 2:
-			channel = fmt.Sprintf("vic%d", p.VMU.Channel)
-		case 3:
-			channel = "lrsd"
-		}
 		row = []string{
 			strconv.Itoa(p.Sequence()),
 			strconv.Itoa(p.Len()),
 			strconv.FormatUint(uint64(p.HRH.Error), 10),
 			strconv.FormatUint(uint64(p.HRH.Payload), 10),
-			channel,
+			p.VMU.Channel.String(),
 			strconv.FormatUint(uint64(p.VMU.Origin), 10),
 			p.HRH.Acquisition.Add(delta).Format(TimeFormat),
 			p.HRH.Reception.Add(delta).Format(TimeFormat),
@@ -113,16 +106,9 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, delta time.Duration) {
 	r := p.HRH.Reception.Add(delta).Format(TimeFormat)
 
 	x := p.HRH.Reception.Sub(p.HRH.Acquisition)
-	channel, origin := p.Id()
 
-	var name string
-	switch channel {
-	case 1, 2:
-		name = fmt.Sprintf("vic%d", channel)
-	case 3:
-		name = "lrsd"
-	}
-	logger.Printf(row, p.Sequence(), p.Len(), p.HRH.Error, p.HRH.Payload, name, origin, a, r, md5.Sum(p.Bytes()), x)
+	_, origin := p.Id()
+	logger.Printf(row, p.Sequence(), p.Len(), p.HRH.Error, p.HRH.Payload, p.VMU.Channel, origin, a, r, md5.Sum(p.Bytes()), x)
 }
 
 func printTMPacket(logger *log.Logger, p *TMPacket, delta time.Duration) {
@@ -135,7 +121,7 @@ func printTMPacket(logger *log.Logger, p *TMPacket, delta time.Duration) {
 }
 
 func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
-	const row = "%s | %10s | %x | %x | %3d | %10s | % x"
+	const row = "%s | %10s | 0x%012x | %08x | %3d | %10s | % x"
 	a := p.Timestamp().Add(delta).Format(TimeFormat)
 	ds := p.Payload[len(p.Payload)-int(p.UMI.Len):]
 	if len(ds) > 16 {
