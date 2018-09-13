@@ -58,6 +58,7 @@ type Packet interface {
 
 	Timestamp() time.Time
 	Reception() time.Time
+	Error() bool
 
 	Len() int
 	Bytes() []byte
@@ -129,12 +130,79 @@ func (g *Gap) Missing() int {
 	return d
 }
 
+type UMIPacketState uint8
+
+const (
+	StateNoValue UMIPacketState = iota
+	StateSameValue
+	StateNewValue
+	StateLatestValue
+	StateErrorValue
+)
+
+func (u UMIPacketState) String() string {
+	switch u {
+	default:
+		return "***"
+	case StateNoValue:
+		return "none"
+	case StateSameValue:
+		return "same"
+	case StateNewValue:
+		return "new"
+	case StateLatestValue:
+		return "latest"
+	case StateErrorValue:
+		return "unavailable"
+	}
+}
+
+type UMIValueType uint8
+
+const (
+	Int32 UMIValueType = iota + 1
+	Float64
+	Binary8
+	Reference
+	String8
+	Long
+	Decimal
+	Real
+	Exponent
+	Time
+	DateTime
+	StringN
+	BinaryN
+	Bit
+)
+
+func (u UMIValueType) String() string {
+	switch u {
+	default:
+		return "***"
+	case Int32, Long:
+		return "long"
+	case Float64, Real, Exponent, Decimal:
+		return "double"
+	case Binary8, BinaryN:
+		return "binary"
+	case Reference:
+		return "reference"
+	case String8, StringN:
+		return "string"
+	case DateTime, Time:
+		return "time"
+	case Bit:
+		return "bit"
+	}
+}
+
 type UMIHeader struct {
 	Size        uint32
 	Code        [6]byte
 	Orbit       [4]byte
-	State       uint8
-	Type        uint8
+	State       UMIPacketState
+	Type        UMIValueType
 	Len         uint16
 	Unit        uint16
 	Acquisition time.Time
@@ -184,6 +252,11 @@ func DecodePD() Decoder {
 		return &p, nil
 	}
 	return DecoderFunc(f)
+}
+
+func (p *PDPacket) Error() bool {
+	e := binary.BigEndian.Uint32(p.UMI.Orbit[:])
+	return e != 0
 }
 
 func (p *PDPacket) PacketInfo() *Info {
@@ -342,6 +415,10 @@ func DecodeTM() Decoder {
 		return &t, nil
 	}
 	return DecoderFunc(f)
+}
+
+func (t *TMPacket) Error() bool {
+	return false
 }
 
 func (t *TMPacket) PacketInfo() *Info {
@@ -503,6 +580,10 @@ func DecodeVMU() Decoder {
 		return &p, nil
 	}
 	return DecoderFunc(f)
+}
+
+func (v *VMUPacket) Error() bool {
+	return v.HRH.Error != 0
 }
 
 func (v *VMUPacket) PacketInfo() *Info {

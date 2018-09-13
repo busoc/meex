@@ -125,8 +125,11 @@ func printTMPacket(logger *log.Logger, p *TMPacket, delta time.Duration) {
 }
 
 func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
-	const row = "%s | %x | %x | %x | %3d | % x"
+	const row = "%s | %10s | %x | %x | %3d | %10s | % x"
 	a := p.Timestamp().Add(delta).Format(TimeFormat)
 	ds := p.Payload[len(p.Payload)-int(p.UMI.Len):]
-	logger.Printf(row, a, p.UMI.State, p.UMI.Code, p.UMI.Orbit, p.UMI.Len, ds)
+	if len(ds) > 16 {
+		ds = ds[:16]
+	}
+	logger.Printf(row, a, p.UMI.State, p.UMI.Code, p.UMI.Orbit, p.UMI.Len, p.UMI.Type, ds)
 }
