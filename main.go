@@ -21,12 +21,13 @@ var commands = []*cli.Command{
 	listCommand,
 	takeCommand,
 	sumCommand,
-	statsCommand,
 	indexCommand,
 	dispatchCommand,
 	shuffleCommand,
 	joinCommand,
 	diffCommand,
+	countCommand,
+	errCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive
@@ -107,6 +108,7 @@ func main() {
 			log.Fatalf("unexpected error: %s", err)
 		}
 	}()
+	sort.Slice(commands, func(i, j int) bool { return commands[i].String() < commands[j].String() })
 	usage := func() {
 		data := struct {
 			Name     string

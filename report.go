@@ -9,11 +9,10 @@ import (
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
-var statsCommand = &cli.Command{
-	Usage: "stats [-k] [-m] <rt,...>",
-	Alias: []string{"report"},
-	Short: "report status of packets into RT file(s)",
-	Run:   runReport,
+var countCommand = &cli.Command{
+	Usage: "count [-k] <rt,...>",
+	Short: "count packets available into RT file(s)",
+	Run:   runCount,
 }
 
 var listCommand = &cli.Command{
@@ -28,6 +27,12 @@ var diffCommand = &cli.Command{
 	Alias: []string{"gaps"},
 	Short: "report missing packets in RT file(s)",
 	Run: runDiff,
+}
+
+var errCommand = &cli.Command{
+	Usage: "verify [-k] [-g] <rt,...>",
+	Short: "report error in packets found in RT file(s)",
+	Run: runError,
 }
 
 func runList(cmd *cli.Command, args []string) error {
@@ -106,35 +111,26 @@ func runDiff(cmd *cli.Command, args []string) error {
 	return nil
 }
 
-func runReport(cmd *cli.Command, args []string) error {
+func runError(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
-	mode := cmd.Flag.String("m", "", "mode")
+	// aggr := cmd.Flag.String("g", "", "aggregate")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
+	// _ = aggr
 
-	queue := Walk(cmd.Flag.Args(), kind.Decod)
-	switch *mode {
-	default:
-		reportCounts(queue)
-	case "error", "err":
-		reportErrors(queue)
-	}
-	return nil
-}
-
-func reportErrors(queue <-chan Packet) {
 	var err, total uint64
 	cs := make(map[uint64]uint64)
 
 	n := time.Now()
-	for p := range queue {
+	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
 		total++
 		if !p.Error() {
 			continue
 		}
 		err++
+
 		switch p := p.(type) {
 		case *VMUPacket:
 			cs[uint64(p.HRH.Error)]++
@@ -147,14 +143,21 @@ func reportErrors(queue <-chan Packet) {
 		log.Printf("%04x: %8d", e, c)
 	}
 	log.Printf("%d/%d errors found (%s)", err, total, elapsed)
+	return nil
 }
 
-func reportCounts(queue <-chan Packet) {
+func runCount(cmd *cli.Command, args []string) error {
 	const row = "%5d | %8d | %8d | %8dMB | %8d"
+
+	var kind Kind
+	cmd.Flag.Var(&kind, "k", "packet type")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
 
 	gs := make(map[int]*Coze)
 	ps := make(map[int]Packet)
-	for p := range queue {
+	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
 		id, _ := p.Id()
 		c, ok := gs[id]
 		if !ok {
@@ -176,4 +179,5 @@ func reportCounts(queue <-chan Packet) {
 		log.Printf(row, c, s.Count, s.Missing, s.Size>>20, s.Error)
 	}
 	log.Printf("total | %8d | %8d | %8dMB | %8d", z.Count, z.Missing, z.Size>>20, z.Error)
+	return nil
 }
