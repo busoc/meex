@@ -57,14 +57,19 @@ func runList(cmd *cli.Command, args []string) error {
 		delta = GPS.Sub(UNIX)
 	}
 	queue := Walk(cmd.Flag.Args(), DecodeById(*id, kind.Decod))
+	var size, total uint64
+	n := time.Now()
 	for p := range queue {
 		if *erronly && !p.Error() {
 			continue
 		}
+		total++
+		size += uint64(p.Len())
 		if err := pt.Print(p, delta); err != nil {
 			return err
 		}
 	}
+	log.Printf("%d packets found %s (%dMB)", total, time.Since(n), size>>20)
 	return nil
 }
 
