@@ -26,13 +26,13 @@ var diffCommand = &cli.Command{
 	Usage: "diff [-g] [-k] [-d] <rt,...>",
 	Alias: []string{"gaps"},
 	Short: "report missing packets in RT file(s)",
-	Run: runDiff,
+	Run:   runDiff,
 }
 
 var errCommand = &cli.Command{
 	Usage: "verify [-k] [-g] <rt,...>",
 	Short: "report error in packets found in RT file(s)",
-	Run: runError,
+	Run:   runError,
 }
 
 func runList(cmd *cli.Command, args []string) error {
@@ -118,7 +118,6 @@ func runError(cmd *cli.Command, args []string) error {
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-	// _ = aggr
 
 	var err, total uint64
 	cs := make(map[uint64]uint64)
@@ -132,6 +131,7 @@ func runError(cmd *cli.Command, args []string) error {
 		err++
 
 		switch p := p.(type) {
+		default:
 		case *VMUPacket:
 			cs[uint64(p.HRH.Error)]++
 		case *PDPacket:

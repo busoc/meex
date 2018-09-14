@@ -66,6 +66,12 @@ type Packet interface {
 	Lesser
 }
 
+type HRPacket interface {
+	Acquisition() time.Time
+	Auxiliary() time.Time
+	fmt.Stringer
+}
+
 type Decoder interface {
 	Decode([]byte) (Packet, error)
 }
@@ -123,7 +129,7 @@ func (g *Gap) Missing() int {
 	if d < 0 {
 		d = -d
 	}
-	return d-1
+	return d - 1
 }
 
 type UMIPacketState uint8
@@ -538,7 +544,7 @@ func (h *HRDLHeader) UnmarshalBinary(bs []byte) error {
 type VMUChannel uint8
 
 const (
-	ChannelVic1 VMUChannel = iota+1
+	ChannelVic1 VMUChannel = iota + 1
 	ChannelVic2
 	ChannelLRSD
 )
@@ -552,6 +558,121 @@ func (v VMUChannel) String() string {
 	case ChannelLRSD:
 		return "lrsd"
 	}
+}
+
+type VMUCommonHeader struct {
+	Id       uint8
+	Origin   uint8
+	AcqTime  time.Duration
+	AuxTime  time.Duration
+	Stream   uint16
+	Sequence uint32
+	UPI      [32]byte
+}
+
+func (v *VMUCommonHeader) Acquisition() time.Time {
+	return GPS.Add(v.AcqTime)
+}
+
+func (v *VMUCommonHeader) Auxiliary() time.Time {
+	return GPS.Add(v.AcqTime)
+}
+
+func (v *VMUCommonHeader) String() string {
+	bs := bytes.Trim(v.UPI[:], "\x00")
+	if len(bs) > 0 {
+		return string(bs)
+	}
+	switch v.Id & 0xF {
+	case 1:
+		return "SCIENCE"
+	case 2:
+		return "IMAGE"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+type VMUImageHeader struct {
+	Format  uint8
+	Pixels  uint32
+	Region  uint64
+	Drop    uint16
+	Scaling uint32
+	Force   uint8
+}
+
+type Image struct {
+	*VMUCommonHeader
+	*VMUImageHeader
+	Payload []byte
+}
+
+func decodeImage(bs []byte) (*Image, error) {
+	r := bytes.NewReader(bs)
+	var (
+		c VMUCommonHeader
+		s VMUImageHeader
+	)
+
+	binary.Read(r, binary.LittleEndian, &c.Id)
+	binary.Read(r, binary.LittleEndian, &c.Stream)
+	binary.Read(r, binary.LittleEndian, &c.Sequence)
+	binary.Read(r, binary.LittleEndian, &c.AcqTime)
+	binary.Read(r, binary.LittleEndian, &c.AuxTime)
+	binary.Read(r, binary.LittleEndian, &c.Origin)
+
+	binary.Read(r, binary.LittleEndian, &s.Format)
+	binary.Read(r, binary.LittleEndian, &s.Pixels)
+	binary.Read(r, binary.LittleEndian, &s.Region)
+	binary.Read(r, binary.LittleEndian, &s.Drop)
+	binary.Read(r, binary.LittleEndian, &s.Scaling)
+	binary.Read(r, binary.LittleEndian, &s.Force)
+
+	if _, err := io.ReadFull(r, c.UPI[:]); err != nil {
+		return nil, err
+	}
+
+	i := Image{
+		VMUCommonHeader: &c,
+		VMUImageHeader:  &s,
+		Payload:         bs,
+	}
+	return &i, nil
+}
+
+func (i *Image) Export(w io.Writer) error {
+	return nil
+}
+
+type Table struct {
+	*VMUCommonHeader
+	Payload []byte
+}
+
+func decodeTable(bs []byte) (*Table, error) {
+	r := bytes.NewReader(bs)
+
+	var c VMUCommonHeader
+	binary.Read(r, binary.LittleEndian, &c.Id)
+	binary.Read(r, binary.LittleEndian, &c.Stream)
+	binary.Read(r, binary.LittleEndian, &c.Sequence)
+	binary.Read(r, binary.LittleEndian, &c.AcqTime)
+	binary.Read(r, binary.LittleEndian, &c.AuxTime)
+	binary.Read(r, binary.LittleEndian, &c.Origin)
+
+	if _, err := io.ReadFull(r, c.UPI[:]); err != nil {
+		return nil, err
+	}
+	t := Table{
+		VMUCommonHeader: &c,
+		Payload:         bs,
+	}
+	return &t, nil
+}
+
+func (t *Table) Export(w io.Writer) error {
+	return nil
 }
 
 type VMUHeader struct {
@@ -618,6 +739,21 @@ func DecodeVMU() Decoder {
 		return &p, nil
 	}
 	return DecoderFunc(f)
+}
+
+func (v *VMUPacket) Data() (HRPacket, error) {
+	var (
+		d   HRPacket
+		err error
+	)
+	switch v.VMU.Channel {
+	default:
+	case ChannelVic1, ChannelVic2:
+		d, err = decodeImage(v.Payload[HRDLHeaderLen+VMUHeaderLen:])
+	case ChannelLRSD:
+		d, err = decodeTable(v.Payload[HRDLHeaderLen+VMUHeaderLen:])
+	}
+	return d, err
 }
 
 func (v *VMUPacket) Error() bool {

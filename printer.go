@@ -38,7 +38,7 @@ type Printer interface {
 
 type logPrinter struct {
 	logger *log.Logger
-	last Packet
+	last   Packet
 }
 
 func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
@@ -102,15 +102,35 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 }
 
 func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %8d | %04x | %02x | %5s | %02x | %s | %s | %x | %s"
+	// const row = "%9d | %5t | %8d | %04x | %02x | %5s | %02x | %s | %s | %16s | %s"
+	const row = "%9d | %04x | %s | %9d | %s | %5s | %02x | %s | %9d | %16s | %x | %s"
 
 	a := p.HRH.Acquisition.Add(delta).Format(TimeFormat)
-	r := p.HRH.Reception.Add(delta).Format(TimeFormat)
-
 	x := p.HRH.Reception.Sub(p.HRH.Acquisition)
 
 	_, origin := p.Id()
-	logger.Printf(row, p.Sequence(), p.Len(), p.HRH.Error, p.HRH.Payload, p.VMU.Channel, origin, a, r, md5.Sum(p.Bytes()), x)
+
+	hr, err := p.Data()
+	if err != nil {
+		return
+	}
+	var v *VMUCommonHeader
+	switch hr := hr.(type) {
+	case *Image:
+		v = hr.VMUCommonHeader
+	case *Table:
+		v = hr.VMUCommonHeader
+	default:
+		return
+	}
+	var rt string
+	if v.Origin == p.VMU.Origin {
+		rt = "realtime"
+	} else {
+		rt = "playback"
+	}
+	q := v.Acquisition().Format(TimeFormat)
+	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), rt, p.VMU.Channel, origin, q, v.Sequence, v.String(), md5.Sum(p.Payload), x)
 }
 
 func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {
