@@ -10,7 +10,7 @@ import (
 const TimeFormat = "2006-01-02 15:04:05.000"
 
 var statsCommand = &cli.Command{
-	Usage: "stats [-g] [-k] [-m] <rt,...>",
+	Usage: "stats [-k] [-m] <rt,...>",
 	Alias: []string{"report"},
 	Short: "report status of packets into RT file(s)",
 	Run:   runReport,
@@ -21,6 +21,13 @@ var listCommand = &cli.Command{
 	Alias: []string{"ls"},
 	Short: "list packets present into RT file(s)",
 	Run:   runList,
+}
+
+var diffCommand = &cli.Command{
+	Usage: "diff [-g] [-k] [-d] <rt,...>",
+	Alias: []string{"gaps"},
+	Short: "report missing packets in RT file(s)",
+	Run: runDiff,
 }
 
 func runList(cmd *cli.Command, args []string) error {
@@ -56,12 +63,11 @@ func runList(cmd *cli.Command, args []string) error {
 	return nil
 }
 
-func runReport(cmd *cli.Command, args []string) error {
+func runDiff(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
-	mode := cmd.Flag.String("m", "", "mode")
-	duration := cmd.Flag.Duration("d", time.Second*5, "duration")
+	duration := cmd.Flag.Duration("d", 0, "duration")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -69,13 +75,49 @@ func runReport(cmd *cli.Command, args []string) error {
 	if !*toGPS {
 		delta = GPS.Sub(UNIX)
 	}
+	const row = "%4d | %s | %s | %6d | %6d | %8d | %s"
+
+	var (
+		count   uint64
+		missing uint64
+		size    uint64
+		elapsed time.Duration
+	)
+
+	gs := make(map[int]Packet)
+	for curr := range Walk(cmd.Flag.Args(), kind.Decod) {
+		count++
+		size += uint64(curr.Len())
+
+		id, _ := curr.Id()
+		if g := curr.Diff(gs[id]); g != nil {
+			missing += uint64(g.Missing())
+			elapsed += g.Duration()
+
+			if g.Duration() >= *duration {
+				p := g.Starts.Add(delta).Format(TimeFormat)
+				c := g.Ends.Add(delta).Format(TimeFormat)
+				log.Printf(row, g.Id, p, c, g.Last, g.First, g.Missing(), g.Duration())
+			}
+		}
+		gs[id] = curr
+	}
+	log.Printf("%d packets found (%dMB) - missing: %d (time: %s)", count, size>>20, missing, elapsed)
+	return nil
+}
+
+func runReport(cmd *cli.Command, args []string) error {
+	var kind Kind
+	cmd.Flag.Var(&kind, "k", "packet type")
+	mode := cmd.Flag.String("m", "", "mode")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
 
 	queue := Walk(cmd.Flag.Args(), kind.Decod)
 	switch *mode {
 	default:
 		reportCounts(queue)
-	case "gaps":
-		reportGaps(queue, delta, *duration)
 	case "error", "err":
 		reportErrors(queue)
 	}
@@ -105,40 +147,6 @@ func reportErrors(queue <-chan Packet) {
 		log.Printf("%04x: %8d", e, c)
 	}
 	log.Printf("%d/%d errors found (%s)", err, total, elapsed)
-}
-
-func reportGaps(queue <-chan Packet, delta, duration time.Duration) {
-	const row = "%4d | %s | %s | %6d | %6d | %8d | %s"
-
-	var (
-		count   uint64
-		missing uint64
-		size    uint64
-		elapsed time.Duration
-	)
-
-	gs := make(map[int]Packet)
-	for curr := range queue {
-		count++
-		size += uint64(curr.Len())
-
-		id, _ := curr.Id()
-		g := curr.Diff(gs[id])
-		if g != nil {
-			missing += uint64(g.Missing())
-			elapsed += g.Duration()
-
-			if g.Duration() < duration {
-				continue
-			}
-
-			p := g.Starts.Add(delta).Format(TimeFormat)
-			c := g.Ends.Add(delta).Format(TimeFormat)
-			log.Printf(row, g.Id, p, c, g.Last, g.First, g.Missing(), g.Duration())
-		}
-		gs[id] = curr
-	}
-	log.Printf("%d packets found (%dMB) - missing: %d (time: %s)", count, size>>20, missing, elapsed)
 }
 
 func reportCounts(queue <-chan Packet) {

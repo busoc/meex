@@ -18,7 +18,7 @@ func NewPrinter(f string) (Printer, error) {
 	)
 	switch strings.ToLower(f) {
 	case "":
-		p = logPrinter{logger: log.New(os.Stdout, "", 0)}
+		p = &logPrinter{logger: log.New(os.Stdout, "", 0)}
 	case "csv":
 		c := csv.NewWriter(os.Stdout)
 		p = &csvPrinter{c}
@@ -38,17 +38,19 @@ type Printer interface {
 
 type logPrinter struct {
 	logger *log.Logger
+	last Packet
 }
 
-func (pt logPrinter) Print(p Packet, delta time.Duration) error {
+func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
 	switch p := p.(type) {
 	case *VMUPacket:
-		printVMUPacket(pt.logger, p, delta)
+		printVMUPacket(pt.logger, p, p.Diff(pt.last), delta)
 	case *TMPacket:
-		printTMPacket(pt.logger, p, delta)
+		printTMPacket(pt.logger, p, p.Diff(pt.last), delta)
 	case *PDPacket:
 		printPDPacket(pt.logger, p, delta)
 	}
+	pt.last = p
 	return nil
 }
 
@@ -99,7 +101,7 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 	return c.writer.Write(row)
 }
 
-func printVMUPacket(logger *log.Logger, p *VMUPacket, delta time.Duration) {
+func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
 	const row = "%9d | %8d | %04x | %02x | %5s | %02x | %s | %s | %x | %s"
 
 	a := p.HRH.Acquisition.Add(delta).Format(TimeFormat)
@@ -111,13 +113,17 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, delta time.Duration) {
 	logger.Printf(row, p.Sequence(), p.Len(), p.HRH.Error, p.HRH.Payload, p.VMU.Channel, origin, a, r, md5.Sum(p.Bytes()), x)
 }
 
-func printTMPacket(logger *log.Logger, p *TMPacket, delta time.Duration) {
-	const row = "%9d | %4d | %4d | %s | %s | %x | %s"
+func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {
+	const row = "%9d | %4d | %4d | %s | %s | %x | %s | %d"
 	a := p.Timestamp().Add(delta).Format(TimeFormat)
 	r := p.Reception().Add(delta).Format(TimeFormat)
 
 	x := p.Reception().Sub(p.Timestamp())
-	logger.Printf(row, p.Sequence(), p.Len(), p.CCSDS.Apid(), a, r, md5.Sum(p.Bytes()), x)
+	var diff int
+	if g != nil {
+		diff = g.Missing()
+	}
+	logger.Printf(row, p.Sequence(), p.Len(), p.CCSDS.Apid(), a, r, md5.Sum(p.Bytes()), x, diff)
 }
 
 func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {

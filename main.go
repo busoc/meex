@@ -26,6 +26,7 @@ var commands = []*cli.Command{
 	dispatchCommand,
 	shuffleCommand,
 	joinCommand,
+	diffCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive

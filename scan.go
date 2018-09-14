@@ -107,10 +107,6 @@ func (c *Coze) Corrupted() float64 {
 	return 0
 }
 
-func (c *Coze) Fill() float64 {
-	return 0
-}
-
 func (c *Coze) Update(o *Coze) {
 	c.Size += o.Size
 	c.Count += o.Count
@@ -127,7 +123,7 @@ func (g *Gap) Missing() int {
 	if d < 0 {
 		d = -d
 	}
-	return d
+	return d-1
 }
 
 type UMIPacketState uint8
@@ -482,17 +478,14 @@ func (t *TMPacket) Less(p Packet) bool {
 }
 
 func (t *TMPacket) Diff(o Packet) *Gap {
-	if _, ok := o.(*TMPacket); o == nil || !ok {
+	if p, ok := o.(*TMPacket); o == nil || !ok || t.CCSDS.Apid() != p.CCSDS.Apid() {
 		return nil
 	}
+
 	if o.Timestamp().After(t.Timestamp()) {
 		return o.Diff(t)
 	}
-	s := o.Sequence() + 1
-	if s > (1<<14)-1 {
-		s = 0
-	}
-	if t.Sequence() == s {
+	if delta := (t.Sequence() - o.Sequence()) & 0x3FFF; delta == 1 {
 		return nil
 	}
 	return &Gap{
