@@ -382,6 +382,77 @@ func (c *CCSDSHeader) Sequence() int {
 	return int(c.Fragment & 0x3FFF)
 }
 
+type ESAPacketType uint8
+
+const (
+	Default ESAPacketType = iota
+	DataDump
+	DataSegment
+	EssentialHk
+	SystemHk
+	PayloadHk
+	ScienceData
+	AncillaryData
+	EssentialCmd
+	SystemCmd
+	PayloadCmd
+	DataLoad
+	Response
+	Report
+	Exception
+	Acknowledge
+)
+
+func (e ESAPacketType) Type() string {
+	switch e >> 2 {
+	default:
+		return "***"
+	case 0, 1:
+		return "dat"
+	case 2:
+		return "cmd"
+	case 3:
+		return "evt"
+	}
+}
+
+func (e ESAPacketType) String() string {
+	switch e {
+	default:
+		return "***"
+	case DataDump:
+		return "data dump"
+	case DataSegment:
+		return "data segment"
+	case EssentialHk:
+		return "essential hk"
+	case SystemHk:
+		return "system hk"
+	case PayloadHk:
+		return "payload hk"
+	case ScienceData:
+		return "science data"
+	case AncillaryData:
+		return "ancillary data"
+	case EssentialCmd:
+		return "essential cmd"
+	case SystemCmd:
+		return "system cmd"
+	case PayloadCmd:
+		return "payload cmd"
+	case DataLoad:
+		return "data load"
+	case Response:
+		return "response"
+	case Report:
+		return "report"
+	case Exception:
+		return "exception"
+	case Acknowledge:
+		return "acknowledge"
+	}
+}
+
 type ESAHeader struct {
 	Acquisition time.Time
 	Source      uint32
@@ -406,6 +477,10 @@ func (e *ESAHeader) UnmarshalBinary(bs []byte) error {
 	e.Acquisition = readTime5(coarse, fine)
 
 	return nil
+}
+
+func (e *ESAHeader) PacketType() ESAPacketType {
+	return ESAPacketType(e.Info&0xF)
 }
 
 type TMPacket struct {

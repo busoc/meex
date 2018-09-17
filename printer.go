@@ -136,7 +136,7 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 }
 
 func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %4d | %4d | %s | %s | %x | %s | %d"
+	const row = "%9d | %4d | %4d | %4d || %s | %s | %16s | %x || %s"
 	a := p.Timestamp().Add(delta).Format(TimeFormat)
 	r := p.Reception().Add(delta).Format(TimeFormat)
 
@@ -145,7 +145,7 @@ func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration)
 	if g != nil {
 		diff = g.Missing()
 	}
-	logger.Printf(row, p.Sequence(), p.Len(), p.CCSDS.Apid(), a, r, md5.Sum(p.Bytes()), x, diff)
+	logger.Printf(row, p.Sequence(), diff, p.Len(), p.CCSDS.Apid(), a, r, p.ESA.PacketType(), md5.Sum(p.Bytes()), x)
 }
 
 func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
