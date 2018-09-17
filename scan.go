@@ -480,7 +480,7 @@ func (e *ESAHeader) UnmarshalBinary(bs []byte) error {
 }
 
 func (e *ESAHeader) PacketType() ESAPacketType {
-	return ESAPacketType(e.Info&0xF)
+	return ESAPacketType(e.Info & 0xF)
 }
 
 type TMPacket struct {

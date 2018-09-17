@@ -1,21 +1,14 @@
 package main
 
 import (
-	"encoding/csv"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
+	_ "github.com/boltdb/bolt"
 	"github.com/midbel/cli"
 	"github.com/midbel/toml"
-	"golang.org/x/sync/errgroup"
 )
 
 type InvalidRequestError string
@@ -24,15 +17,11 @@ func (i InvalidRequestError) Error() string {
 	return string(i)
 }
 
-const MaxInterval = time.Hour * 24
-
 var distribCommand = &cli.Command{
 	Usage: "distrib [-d] <config.toml>",
 	Short: "run a REST server",
 	Run:   runDistrib,
 }
-
-type Handler func(*http.Request) (interface{}, error)
 
 func runDistrib(cmd *cli.Command, args []string) error {
 	devel := cmd.Flag.Bool("d", false, "development")
@@ -52,5 +41,29 @@ func runDistrib(cmd *cli.Command, args []string) error {
 	if err := toml.NewDecoder(r).Decode(&c); err != nil {
 		return err
 	}
+	if *devel {
+
+	}
 	return http.ListenAndServe(c.Addr, nil)
+}
+
+func timeRange(q url.Values) (time.Time, time.Time, error) {
+	var (
+		fd, td time.Time
+		err    error
+	)
+	if fd, err = time.Parse(time.RFC3339, q.Get("dtstart")); err != nil && q.Get("dtstart") != "" {
+		return fd, td, InvalidRequestError("invalid format for dtstart")
+	}
+	if td, err = time.Parse(time.RFC3339, q.Get("dtend")); err != nil && q.Get("dtend") != "" {
+		return fd, td, InvalidRequestError("invalid format for dtend")
+	}
+	if fd.IsZero() && td.IsZero() {
+		td = time.Now()
+		fd = td.Add(-time.Hour * 24)
+	}
+	if td.Before(fd) {
+		return fd, td, InvalidRequestError("invalid date range")
+	}
+	return fd, td, nil
 }
