@@ -67,8 +67,11 @@ type Packet interface {
 }
 
 type HRPacket interface {
+	Packet
+
 	Acquisition() time.Time
 	Auxiliary() time.Time
+
 	fmt.Stringer
 }
 
@@ -90,6 +93,21 @@ type Info struct {
 	Sum      uint32    `json:"checksum"`
 	Context  string    `json:"context"`
 	Type     string    `json:"data"`
+}
+
+func (i *Info) String() string {
+	switch i.Type {
+	case "tm":
+		return fmt.Sprint(i.Id)
+	case "pp":
+		return fmt.Sprintf("%x", i.Id)
+	case "vmu":
+		return VMUChannel(i.Id).String()
+	case "hrd":
+		return fmt.Sprintf("%s-%x", i.Context, i.Id)
+	default:
+		return "invalid"
+	}
 }
 
 type Gap struct {
@@ -271,6 +289,7 @@ func (p *PDPacket) PacketInfo() *Info {
 		Size:    len(p.Payload) - UMIHeaderLen,
 		AcqTime: p.Timestamp(),
 		Sum:     adler32.Checksum(p.Payload[UMIHeaderLen:]),
+		Type:    "pp",
 	}
 }
 
@@ -533,6 +552,8 @@ func (t *TMPacket) PacketInfo() *Info {
 		Size:     len(t.Payload) - PTHHeaderLen,
 		AcqTime:  t.Timestamp(),
 		Sum:      adler32.Checksum(t.Payload[PTHHeaderLen:]),
+		Context:  t.ESA.PacketType().String(),
+		Type:     "tm",
 	}
 }
 
@@ -638,13 +659,41 @@ func (v VMUChannel) String() string {
 }
 
 type VMUCommonHeader struct {
-	Id       uint8
+	Property uint8
 	Origin   uint8
 	AcqTime  time.Duration
 	AuxTime  time.Duration
 	Stream   uint16
-	Sequence uint32
+	Counter  uint32
 	UPI      [32]byte
+}
+
+func (v *VMUCommonHeader) Id() (int, int) {
+	return int(v.Origin), int(v.Property >> 4)
+}
+
+func (v *VMUCommonHeader) Sequence() int {
+	return int(v.Counter)
+}
+
+func (v *VMUCommonHeader) Diff(_ Packet) *Gap {
+	return nil
+}
+
+func (v *VMUCommonHeader) Timestamp() time.Time {
+	return v.Acquisition()
+}
+
+func (v *VMUCommonHeader) Reception() time.Time {
+	return v.Acquisition()
+}
+
+func (v *VMUCommonHeader) Error() bool {
+	return false
+}
+
+func (v *VMUCommonHeader) Less(o Packet) bool {
+	return v.Timestamp().Before(o.Timestamp())
 }
 
 func (v *VMUCommonHeader) Acquisition() time.Time {
@@ -660,7 +709,7 @@ func (v *VMUCommonHeader) String() string {
 	if len(bs) > 0 {
 		return string(bs)
 	}
-	switch v.Id & 0xF {
+	switch v.Property >> 4 {
 	case 1:
 		return "SCIENCE"
 	case 2:
@@ -692,9 +741,9 @@ func decodeImage(bs []byte) (*Image, error) {
 		s VMUImageHeader
 	)
 
-	binary.Read(r, binary.LittleEndian, &c.Id)
+	binary.Read(r, binary.LittleEndian, &c.Property)
 	binary.Read(r, binary.LittleEndian, &c.Stream)
-	binary.Read(r, binary.LittleEndian, &c.Sequence)
+	binary.Read(r, binary.LittleEndian, &c.Counter)
 	binary.Read(r, binary.LittleEndian, &c.AcqTime)
 	binary.Read(r, binary.LittleEndian, &c.AuxTime)
 	binary.Read(r, binary.LittleEndian, &c.Origin)
@@ -721,13 +770,21 @@ func decodeImage(bs []byte) (*Image, error) {
 func (i *Image) PacketInfo() *Info {
 	return &Info{
 		Id:       int(i.Origin),
-		Sequence: int(i.Sequence),
+		Sequence: i.Sequence(),
 		Size:     len(i.Payload) - VMUHeaderLen - HRDLHeaderLen,
 		AcqTime:  i.Acquisition(),
 		Sum:      0,
 		Context:  i.String(),
 		Type:     "hrd",
 	}
+}
+
+func (i *Image) Len() int {
+	return len(i.Payload)
+}
+
+func (i *Image) Bytes() []byte {
+	return i.Payload
 }
 
 func (i *Image) Export(w io.Writer) error {
@@ -743,9 +800,9 @@ func decodeTable(bs []byte) (*Table, error) {
 	r := bytes.NewReader(bs)
 
 	var c VMUCommonHeader
-	binary.Read(r, binary.LittleEndian, &c.Id)
+	binary.Read(r, binary.LittleEndian, &c.Property)
 	binary.Read(r, binary.LittleEndian, &c.Stream)
-	binary.Read(r, binary.LittleEndian, &c.Sequence)
+	binary.Read(r, binary.LittleEndian, &c.Counter)
 	binary.Read(r, binary.LittleEndian, &c.AcqTime)
 	binary.Read(r, binary.LittleEndian, &c.AuxTime)
 	binary.Read(r, binary.LittleEndian, &c.Origin)
@@ -763,13 +820,21 @@ func decodeTable(bs []byte) (*Table, error) {
 func (t *Table) PacketInfo() *Info {
 	return &Info{
 		Id:       int(t.Origin),
-		Sequence: int(t.Sequence),
+		Sequence: t.Sequence(),
 		Size:     len(t.Payload) - VMUHeaderLen - HRDLHeaderLen,
 		AcqTime:  t.Acquisition(),
 		Sum:      0,
 		Context:  t.String(),
 		Type:     "hrd",
 	}
+}
+
+func (t *Table) Len() int {
+	return len(t.Payload)
+}
+
+func (t *Table) Bytes() []byte {
+	return t.Payload
 }
 
 func (t *Table) Export(w io.Writer) error {
@@ -818,28 +883,44 @@ type VMUPacket struct {
 }
 
 func DecodeVMU() Decoder {
+	return DecoderFunc(decodeVMU)
+}
+
+func DecodeHRD() Decoder {
 	f := func(bs []byte) (Packet, error) {
-		if len(bs) < HRDLHeaderLen+VMUHeaderLen {
-			return nil, io.ErrShortBuffer
-		}
-		var (
-			h HRDLHeader
-			v VMUHeader
-		)
-		if err := h.UnmarshalBinary(bs); err != nil {
+		p, err := decodeVMU(bs)
+		if err != nil {
 			return nil, err
 		}
-		if err := v.UnmarshalBinary(bs[HRDLHeaderLen:]); err != nil {
-			return nil, err
+		v, ok := p.(*VMUPacket)
+		if !ok {
+			return nil, fmt.Errorf("can not decode VMU packet")
 		}
-		p := VMUPacket{
-			HRH:     &h,
-			VMU:     &v,
-			Payload: bs,
-		}
-		return &p, nil
+		return v.Data()
 	}
 	return DecoderFunc(f)
+}
+
+func decodeVMU(bs []byte) (Packet, error) {
+	if len(bs) < HRDLHeaderLen+VMUHeaderLen {
+		return nil, io.ErrShortBuffer
+	}
+	var (
+		h HRDLHeader
+		v VMUHeader
+	)
+	if err := h.UnmarshalBinary(bs); err != nil {
+		return nil, err
+	}
+	if err := v.UnmarshalBinary(bs[HRDLHeaderLen:]); err != nil {
+		return nil, err
+	}
+	p := VMUPacket{
+		HRH:     &h,
+		VMU:     &v,
+		Payload: bs,
+	}
+	return &p, nil
 }
 
 func (v *VMUPacket) Data() (HRPacket, error) {
@@ -868,6 +949,7 @@ func (v *VMUPacket) PacketInfo() *Info {
 		Size:     len(v.Payload) - HRDLHeaderLen,
 		AcqTime:  v.VMU.Acquisition,
 		Sum:      adler32.Checksum(v.Payload[HRDLHeaderLen:]),
+		Type:     "vmu",
 	}
 }
 

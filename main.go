@@ -28,6 +28,7 @@ var commands = []*cli.Command{
 	diffCommand,
 	countCommand,
 	errCommand,
+	pushCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive
@@ -83,9 +84,11 @@ func (k *Kind) Set(v string) error {
 	case "tm", "pth", "pt":
 		k.Decod = DecodeTM()
 		k.Sort = SortTMIndex
-	case "hrd", "hr", "hrdl":
+	case "vmu":
 		k.Decod = DecodeVMU()
 		k.Sort = SortHRDIndex
+	case "hrd":
+		k.Decod = DecodeHRD()
 	}
 	return nil
 }
