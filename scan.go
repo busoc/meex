@@ -88,6 +88,8 @@ type Info struct {
 	Size     int       `json:"length"`
 	AcqTime  time.Time `json:"dtstamp"`
 	Sum      uint32    `json:"checksum"`
+	Context  string    `json:"context"`
+	Type     string    `json:"data"`
 }
 
 type Gap struct {
@@ -716,6 +718,18 @@ func decodeImage(bs []byte) (*Image, error) {
 	return &i, nil
 }
 
+func (i *Image) PacketInfo() *Info {
+	return &Info{
+		Id:       int(i.Origin),
+		Sequence: int(i.Sequence),
+		Size:     len(i.Payload) - VMUHeaderLen - HRDLHeaderLen,
+		AcqTime:  i.Acquisition(),
+		Sum:      0,
+		Context:  i.String(),
+		Type:     "hrd",
+	}
+}
+
 func (i *Image) Export(w io.Writer) error {
 	return nil
 }
@@ -744,6 +758,18 @@ func decodeTable(bs []byte) (*Table, error) {
 		Payload:         bs,
 	}
 	return &t, nil
+}
+
+func (t *Table) PacketInfo() *Info {
+	return &Info{
+		Id:       int(t.Origin),
+		Sequence: int(t.Sequence),
+		Size:     len(t.Payload) - VMUHeaderLen - HRDLHeaderLen,
+		AcqTime:  t.Acquisition(),
+		Sum:      0,
+		Context:  t.String(),
+		Type:     "hrd",
+	}
 }
 
 func (t *Table) Export(w io.Writer) error {

@@ -60,7 +60,7 @@ func Walk(paths []string, d Decoder) <-chan Packet {
 }
 
 func Infos(paths []string, d Decoder) <-chan *Info {
-	q := make(chan Info)
+	q := make(chan *Info)
 	go func() {
 		defer close(q)
 		for p := range Walk(paths, d) {
