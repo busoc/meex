@@ -59,6 +59,34 @@ func Walk(paths []string, d Decoder) <-chan Packet {
 	return q
 }
 
+func Infos(paths []string, d Decoder) <-chan *Info {
+	q := make(chan Info)
+	go func() {
+		defer close(q)
+		for p := range Walk(paths, d) {
+			q <- p.PacketInfo()
+		}
+	}()
+	return q
+}
+
+func Gaps(paths []string, d Decoder) <-chan *Gap {
+	q := make(chan *Gap)
+	go func() {
+		defer close(q)
+
+		gs := make(map[int]Packet)
+		for p := range Walk(paths, d) {
+			id, _ := p.Id()
+			if g := p.Diff(gs[id]); g != nil {
+				q <- g
+			}
+			gs[id] = p
+		}
+	}()
+	return q
+}
+
 func walk(p string, q chan Packet, d Decoder) error {
 	return filepath.Walk(p, func(p string, i os.FileInfo, err error) error {
 		if err != nil {
