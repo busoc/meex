@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/gorilla/mux"
 	"github.com/midbel/cli"
 	"github.com/midbel/toml"
+	"golang.org/x/sync/errgroup"
 )
 
 type NotFoundError string
@@ -37,8 +40,56 @@ var distribCommand = &cli.Command{
 	Run:   runDistrib,
 }
 
+var pushCommand = &cli.Command{
+	Usage: "push [-k] <url> <rt,...>",
+	Short: "push packet infos to distrib API",
+	Run:   runPush,
+}
+
 func runPush(cmd *cli.Command, args []string) error {
-	return cmd.Flag.Parse(args)
+	var kind Kind
+	cmd.Flag.Var(&kind, "k", "packet type")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	sema := make(chan struct{}, 8)
+	rest := cmd.Flag.Arg(0)
+	files := cmd.Flag.Args()
+
+	var (
+		group errgroup.Group
+		count uint64
+		total uint64
+	)
+	now := time.Now()
+	for i := range Infos(files[1:], kind.Decod) {
+		sema <- struct{}{}
+		total++
+
+		d := i
+		group.Go(func() error {
+			defer func() {
+				<-sema
+			}()
+			var buf bytes.Buffer
+			if err := json.NewEncoder(&buf).Encode(d); err != nil {
+				return err
+			}
+			r, err := http.Post(rest+d.String(), "application/json", &buf)
+			if err != nil {
+				return err
+			}
+			defer r.Body.Close()
+			if r.StatusCode != http.StatusNoContent {
+				return fmt.Errorf("unexpected status code: %d", r.StatusCode)
+			}
+			atomic.AddUint64(&count, 1)
+			return nil
+		})
+	}
+	err := group.Wait()
+	log.Printf("%d/%d packets pushed to %s (%s)", count, total, rest, time.Since(now))
+	return err
 }
 
 func runDistrib(cmd *cli.Command, args []string) error {
@@ -218,6 +269,7 @@ func negociate(h handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(ds)
 	}
 	return http.HandlerFunc(f)
