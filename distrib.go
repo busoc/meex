@@ -196,34 +196,42 @@ func ListKeys(db *bolt.DB) http.Handler {
 
 func ListPackets(db *bolt.DB) http.Handler {
 	f := func(r *http.Request) (interface{}, error) {
-		fd, td, err := timeRange(r.URL.Query())
-		if err != nil {
+		var err error
+		rs := struct {
+			Id     string    `json:"id"`
+			Starts time.Time `json:"dtstart"`
+			Ends   time.Time `json:"dtend"`
+			Count  int       `json:"count"`
+			Data   []*Info   `json:"data"`
+		}{
+			Id: mux.Vars(r)["id"],
+		}
+		if rs.Starts, rs.Ends, err = timeRange(r.URL.Query()); err != nil {
 			return nil, err
 		}
-		id := mux.Vars(r)["id"]
-		var ps []*Info
 		err = db.View(func(tx *bolt.Tx) error {
-			b := tx.Bucket([]byte(id))
+			b := tx.Bucket([]byte(rs.Id))
 			if b == nil {
-				return NotFoundError(id)
+				return NotFoundError(rs.Id)
 			}
 			c := b.Cursor()
-			min := []byte(fd.Format(time.RFC3339))
-			max := []byte(td.Format(time.RFC3339))
+			min := []byte(rs.Starts.Format(time.RFC3339))
+			max := []byte(rs.Ends.Format(time.RFC3339))
 
 			for k, v := c.Seek(min); k != nil && bytes.Compare(k, max) <= 0; k, v = c.Next() {
 				var i Info
 				if err := json.Unmarshal(v, &i); err != nil {
 					return err
 				}
-				ps = append(ps, &i)
+				rs.Data = append(rs.Data, &i)
 			}
 			return nil
 		})
 		if err != nil {
 			return nil, err
 		}
-		return ps, nil
+		rs.Count = len(rs.Data)
+		return rs, nil
 	}
 	return negociate(f)
 }
@@ -242,6 +250,7 @@ func UpdatePackets(db *bolt.DB) http.Handler {
 			if err != nil {
 				return err
 			}
+			i.AcqTime = i.AcqTime.Add(GPS.Sub(UNIX))
 			ks := i.AcqTime.Format(time.RFC3339)
 			bs, _ := json.Marshal(i)
 			return b.Put([]byte(ks), bs)
