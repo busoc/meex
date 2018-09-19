@@ -676,8 +676,23 @@ func (v *VMUCommonHeader) Sequence() int {
 	return int(v.Counter)
 }
 
-func (v *VMUCommonHeader) Diff(_ Packet) *Gap {
-	return nil
+func (v *VMUCommonHeader) Diff(o Packet) *Gap {
+	if o.Origin != v.Origin {
+		return nil
+	}
+	if o.Timestamp().Before(v.Timestamp) {
+		return o.Diff(v)
+	}
+	if o.Counter+1 == v.Counter {
+		return nil
+	}
+	return &Gap{
+		Id:     int(v.Origin),
+		Starts: o.Timestamp(),
+		Ends:   v.Timestamp(),
+		Last:   int(o.Counter),
+		First:  int(v.Counter),
+	}
 }
 
 func (v *VMUCommonHeader) Timestamp() time.Time {
