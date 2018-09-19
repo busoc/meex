@@ -677,22 +677,23 @@ func (v *VMUCommonHeader) Sequence() int {
 }
 
 func (v *VMUCommonHeader) Diff(o Packet) *Gap {
-	if o.Origin != v.Origin {
-		return nil
-	}
-	if o.Timestamp().Before(v.Timestamp) {
-		return o.Diff(v)
-	}
-	if o.Counter+1 == v.Counter {
-		return nil
-	}
-	return &Gap{
-		Id:     int(v.Origin),
-		Starts: o.Timestamp(),
-		Ends:   v.Timestamp(),
-		Last:   int(o.Counter),
-		First:  int(v.Counter),
-	}
+	//if o.Origin != v.Origin {
+	//	return nil
+	//}
+	//if o.Timestamp().Before(v.Timestamp) {
+	//	return o.Diff(v)
+	//}
+	//if o.Counter+1 == v.Counter {
+	//	return nil
+	//}
+	//return &Gap{
+	//	Id:     int(v.Origin),
+	//	Starts: o.Timestamp(),
+	//	Ends:   v.Timestamp(),
+	//	Last:   int(o.Counter),
+	//	First:  int(v.Counter),
+	//}
+	return nil
 }
 
 func (v *VMUCommonHeader) Timestamp() time.Time {
