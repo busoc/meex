@@ -107,6 +107,7 @@ func runDistrib(cmd *cli.Command, args []string) error {
 		Path    string `toml:"database"`
 		Datadir string `toml:"datadir"`
 		Kind    string `toml:"type"`
+		Prefix  string `toml:"key"`
 	}{}
 	if err := toml.NewDecoder(r).Decode(&c); err != nil {
 		return err
@@ -120,12 +121,12 @@ func runDistrib(cmd *cli.Command, args []string) error {
 	rx := mux.NewRouter()
 	rx.Handle("/", ListKeys(db)).Methods(http.MethodGet)
 	rx.Handle("/packets/{id:[0-9A-Za-z_-]+}", ListPackets(db)).Methods(http.MethodGet)
-	rx.Handle("/packets/{id:[0-9A-Za-z_-]+}", UpdatePackets(db)).Methods(http.MethodPost)
-	if h, err := Downloads(c.Datadir, c.Kind); err != nil {
-		return err
-	} else {
-		rx.Handle("/archives/", h).Methods(http.MethodGet)
-	}
+	rx.Handle("/packets/{id:[0-9A-Za-z_-]+}", UpdatePackets(db, c.Prefix)).Methods(http.MethodPost)
+	// if h, err := Downloads(c.Datadir, c.Kind); err != nil {
+	// 	return err
+	// } else {
+	// 	rx.Handle("/archives/", h).Methods(http.MethodGet)
+	// }
 	if *devel {
 
 	}
@@ -236,7 +237,7 @@ func ListPackets(db *bolt.DB) http.Handler {
 	return negociate(f)
 }
 
-func UpdatePackets(db *bolt.DB) http.Handler {
+func UpdatePackets(db *bolt.DB, prefix string) http.Handler {
 	f := func(r *http.Request) (interface{}, error) {
 		defer r.Body.Close()
 
@@ -245,6 +246,9 @@ func UpdatePackets(db *bolt.DB) http.Handler {
 			return nil, err
 		}
 		id := mux.Vars(r)["id"]
+		if prefix != "" {
+			id = fmt.Sprintf("%s-%s", prefix, id)
+		}
 		err := db.Batch(func(tx *bolt.Tx) error {
 			b, err := tx.CreateBucketIfNotExists([]byte(id))
 			if err != nil {

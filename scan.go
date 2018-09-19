@@ -100,7 +100,7 @@ func (i *Info) String() string {
 	case "tm":
 		return fmt.Sprint(i.Id)
 	case "pp":
-		return fmt.Sprintf("%x", i.Id)
+		return fmt.Sprintf("0x%x", i.Id)
 	case "vmu":
 		return VMUChannel(i.Id).String()
 	case "hrd":
