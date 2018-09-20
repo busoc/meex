@@ -59,6 +59,47 @@ func Walk(paths []string, d Decoder) <-chan Packet {
 	return q
 }
 
+type TimeCoze struct {
+	*Coze
+	When time.Time
+}
+
+const Day = time.Hour * 24
+
+func CountByDay(paths []string, d Decoder) <-chan *TimeCoze {
+	q := make(chan *TimeCoze)
+	go func() {
+		defer close(q)
+
+		gs := make(map[int]*TimeCoze)
+		ps := make(map[int]Packet)
+		for p := range Walk(paths, d) {
+			id, _ := p.Id()
+			c := gs[id]
+			if c != nil && p.Timestamp().Sub(c.When) >= Day {
+				q <- c
+				delete(gs, id)
+			}
+			if _, ok := gs[id]; !ok {
+				c = &TimeCoze{
+					Coze: &Coze{Id: id},
+					When: p.Timestamp().Truncate(Day),
+				}
+			}
+			c.Count++
+			c.Size += uint64(p.Len())
+			if g := p.Diff(ps[id]); g != nil {
+				c.Missing += uint64(g.Missing())
+			}
+			if p.Error() {
+				c.Error++
+			}
+			ps[id], gs[id] = p, c
+		}
+	}()
+	return q
+}
+
 func Infos(paths []string, d Decoder) <-chan *Info {
 	q := make(chan *Info)
 	go func() {

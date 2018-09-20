@@ -152,37 +152,28 @@ func runError(cmd *cli.Command, args []string) error {
 }
 
 func runCount(cmd *cli.Command, args []string) error {
-	const row = "%5d | %8d | %8d | %8dMB | %8d"
+	const row = "%s | %5d | %8d | %8d | %8dMB | %8d"
+	// const row = "%5d | %8d | %8d | %8dMB | %8d"
 
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
+	// total := cmd.Flag.Bool("t", false, "total")
+	toGPS := cmd.Flag.Bool("g", false, "to gps time")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
 
-	gs := make(map[int]*Coze)
-	ps := make(map[int]Packet)
-	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
-		id, _ := p.Id()
-		c, ok := gs[id]
-		if !ok {
-			c = &Coze{}
-		}
-		c.Count++
-		c.Size += uint64(p.Len())
-		if g := p.Diff(ps[id]); g != nil {
-			c.Missing += uint64(g.Missing())
-		}
-		if p.Error() {
-			c.Error++
-		}
-		gs[id], ps[id] = c, p
+	var delta time.Duration
+	if !*toGPS {
+		delta = GPS.Sub(UNIX)
 	}
+
 	var z Coze
-	for c, s := range gs {
-		z.Update(s)
-		log.Printf(row, c, s.Count, s.Missing, s.Size>>20, s.Error)
+	now := time.Now()
+	for c := range CountByDay(cmd.Flag.Args(), kind.Decod) {
+		z.Update(c.Coze)
+		log.Printf(row, c.When.Add(delta).Format("2006-01-02"), c.Id, c.Count, c.Missing, c.Size>>20, c.Error)
 	}
-	log.Printf("total | %8d | %8d | %8dMB | %8d", z.Count, z.Missing, z.Size>>20, z.Error)
+	log.Printf("%d packets found, %d missing (%dMB, %s)", z.Count, z.Missing, z.Size>>20, time.Since(now))
 	return nil
 }
