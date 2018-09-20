@@ -96,6 +96,9 @@ func CountByDay(paths []string, d Decoder) <-chan *TimeCoze {
 			}
 			ps[id], gs[id] = p, c
 		}
+		for _, c := range gs {
+			q <- c
+		}
 	}()
 	return q
 }
