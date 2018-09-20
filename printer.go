@@ -132,7 +132,7 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 		diff = g.Missing()
 	}
 	sum := md5.Sum(p.Payload)
-	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence, v.String(), sum, x)
+	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence(), v.String(), sum, x)
 }
 
 func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {
