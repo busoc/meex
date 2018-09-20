@@ -676,8 +676,32 @@ func (v *VMUCommonHeader) Sequence() int {
 	return int(v.Counter)
 }
 
-func (v *VMUCommonHeader) Diff(_ Packet) *Gap {
-	return nil
+func (v *VMUCommonHeader) Diff(p Packet) *Gap {
+	var o *VMUCommonHeader
+	switch p := p.(type) {
+	case *Table:
+		o = p.VMUCommonHeader
+	case *Image:
+		o = p.VMUCommonHeader
+	default:
+		return nil
+	}
+	if !(o.Origin == v.Origin && o.Property>>4 == v.Property>>4) {
+		return nil
+	}
+	if o.Timestamp().After(v.Timestamp()) {
+		return o.Diff(p)
+	}
+	if o.Counter+1 == v.Counter {
+		return nil
+	}
+	return &Gap{
+		Id:     int(v.Origin),
+		Starts: o.Timestamp(),
+		Ends:   v.Timestamp(),
+		Last:   int(o.Counter),
+		First:  int(v.Counter),
+	}
 }
 
 func (v *VMUCommonHeader) Timestamp() time.Time {
