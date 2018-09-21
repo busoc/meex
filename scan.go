@@ -474,7 +474,7 @@ func (t *TMPacket) Diff(o Packet) *Gap {
 	if o.Timestamp().After(t.Timestamp()) {
 		return o.Diff(t)
 	}
-	if delta := (t.Sequence() - o.Sequence()) & 0x3FFF; delta == 1 {
+	if delta := (t.Sequence() - o.Sequence()) & 0x3FFF; delta <= 1 {
 		return nil
 	}
 	return &Gap{
@@ -577,7 +577,7 @@ func (v *VMUCommonHeader) Diff(p Packet) *Gap {
 	if o.Timestamp().After(v.Timestamp()) {
 		return o.Diff(p)
 	}
-	if o.Counter+1 == v.Counter {
+	if o.Counter == v.Counter || o.Counter+1 == v.Counter {
 		return nil
 	}
 	return &Gap{
@@ -618,11 +618,15 @@ func (v *VMUCommonHeader) String() string {
 	if len(bs) > 0 {
 		return string(bs)
 	}
+	return v.Type()
+}
+
+func (v *VMUCommonHeader) Type() string {
 	switch v.Property >> 4 {
 	case 1:
-		return "SCIENCE"
+		return "SCC"
 	case 2:
-		return "IMAGE"
+		return "IMG"
 	default:
 		return "UNKNOWN"
 	}
@@ -901,7 +905,7 @@ func (v *VMUPacket) Diff(o Packet) *Gap {
 	if u.VMU.Acquisition.After(v.VMU.Acquisition) {
 		return u.Diff(v)
 	}
-	if u.VMU.Channel != v.VMU.Channel || u.VMU.Sequence+1 == v.VMU.Sequence {
+	if u.VMU.Channel != v.VMU.Channel || u.VMU.Sequence == v.VMU.Sequence || u.VMU.Sequence+1 == v.VMU.Sequence {
 		return nil
 	}
 	return &Gap{

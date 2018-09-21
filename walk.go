@@ -175,7 +175,7 @@ func defaultPacketKey(p Packet) string {
 		return p.VMU.Channel.String()
 	case HRPacket:
 		i, _ := p.Id()
-		return fmt.Sprintf("%x/%s", i, p.String())
+		return fmt.Sprintf("%x/%s/%s", i, p.Type(), p.String())
 	default:
 		i, _ := p.Id()
 		return fmt.Sprint(i)

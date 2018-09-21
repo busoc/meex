@@ -44,6 +44,7 @@ type Packet interface {
 type HRPacket interface {
 	Packet
 
+	Type() string
 	Acquisition() time.Time
 	Auxiliary() time.Time
 
