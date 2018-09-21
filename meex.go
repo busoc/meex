@@ -1,10 +1,10 @@
 package main
 
 import (
-  "errors"
-  "io"
-  "fmt"
-  "time"
+	"errors"
+	"fmt"
+	"io"
+	"time"
 )
 
 var ErrSkip = errors.New("skip")

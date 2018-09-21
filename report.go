@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"strconv"
+	// "strconv"
 	"time"
 
 	"github.com/midbel/cli"
@@ -78,7 +78,6 @@ func runDiff(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
-	toHex := cmd.Flag.Bool("x", false, "to hex")
 	duration := cmd.Flag.Duration("d", 0, "duration")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
@@ -87,40 +86,50 @@ func runDiff(cmd *cli.Command, args []string) error {
 	if !*toGPS {
 		delta = GPS.Sub(UNIX)
 	}
-	base := 10
-	if *toHex {
-		base = 16
-	}
-	const row = "%5s | %s | %s | %6d | %6d | %8d | %s"
+	const row = "%20s | %s | %s | %6d | %6d | %8d | %s"
 
 	var (
 		count   uint64
 		missing uint64
-		size    uint64
+		// size    uint64
 		elapsed time.Duration
 	)
 
-	gs := make(map[int]Packet)
-	for curr := range Walk(cmd.Flag.Args(), kind.Decod) {
+	for g := range Gaps(cmd.Flag.Args(), kind.Decod) {
 		count++
-		size += uint64(curr.Len())
+		missing += uint64(g.Missing())
+		elapsed += g.Duration()
 
-		id, _ := curr.Id()
-		if g := curr.Diff(gs[id]); g != nil {
-			missing += uint64(g.Missing())
-			elapsed += g.Duration()
+		if g.Duration() >= *duration {
+			p := g.Starts.Add(delta).Format(TimeFormat)
+			c := g.Ends.Add(delta).Format(TimeFormat)
 
-			if g.Duration() >= *duration {
-				p := g.Starts.Add(delta).Format(TimeFormat)
-				c := g.Ends.Add(delta).Format(TimeFormat)
-
-				id := strconv.FormatInt(int64(g.Id), base)
-				log.Printf(row, id, p, c, g.Last, g.First, g.Missing(), g.Duration())
-			}
+			log.Printf(row, g.Key, p, c, g.Last, g.First, g.Missing(), g.Duration())
 		}
-		gs[id] = curr
 	}
-	log.Printf("%d packets found (%dMB) - missing: %d (time: %s)", count, size>>20, missing, elapsed)
+	log.Printf("%d gaps found (%d missing packets - %s)", count, missing, elapsed)
+
+	// gs := make(map[int]Packet)
+	// for curr := range Walk(cmd.Flag.Args(), kind.Decod) {
+	// 	count++
+	// 	size += uint64(curr.Len())
+	//
+	// 	id, _ := curr.Id()
+	// 	if g := curr.Diff(gs[id]); g != nil {
+	// 		missing += uint64(g.Missing())
+	// 		elapsed += g.Duration()
+	//
+	// 		if g.Duration() >= *duration {
+	// 			p := g.Starts.Add(delta).Format(TimeFormat)
+	// 			c := g.Ends.Add(delta).Format(TimeFormat)
+	//
+	// 			id := strconv.FormatInt(int64(g.Id), base)
+	// 			log.Printf(row, id, p, c, g.Last, g.First, g.Missing(), g.Duration())
+	// 		}
+	// 	}
+	// 	gs[id] = curr
+	// }
+	// log.Printf("%d packets found (%dMB) - missing: %d (time: %s)", count, size>>20, missing, elapsed)
 	return nil
 }
 
@@ -160,12 +169,11 @@ func runError(cmd *cli.Command, args []string) error {
 }
 
 func runCount(cmd *cli.Command, args []string) error {
-	const row = "%s | %5s | %8d | %8d | %8dMB | %8d"
+	const row = "%20s | %16s | %8d | %8d | %8dMB | %8d"
 
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "to gps time")
-	toHex := cmd.Flag.Bool("x", false, "to hex")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -174,17 +182,12 @@ func runCount(cmd *cli.Command, args []string) error {
 	if !*toGPS {
 		delta = GPS.Sub(UNIX)
 	}
-	base := 10
-	if *toHex {
-		base = 16
-	}
 
 	var z Coze
 	now := time.Now()
 	for c := range CountByDay(cmd.Flag.Args(), kind.Decod) {
 		z.Update(c.Coze)
-		id := strconv.FormatInt(int64(c.Id), base)
-		log.Printf(row, c.When.Add(delta).Format("2006-01-02"), id, c.Count, c.Missing, c.Size>>20, c.Error)
+		log.Printf(row, c.When.Add(delta).Format("2006-01-02"), c.Key, c.Count, c.Missing, c.Size>>20, c.Error)
 	}
 	log.Printf("%d packets found, %d missing (%dMB, %s)", z.Count, z.Missing, z.Size>>20, time.Since(now))
 	return nil

@@ -10,6 +10,8 @@ import (
 
 const RT = "rt_%02d_%02d.dat"
 
+const Day = time.Hour * 24
+
 func ListPaths(dir string, fd, td time.Time) []string {
 	var ds []string
 	for fd.Before(td) {
@@ -59,30 +61,57 @@ func Walk(paths []string, d Decoder) <-chan Packet {
 	return q
 }
 
-type TimeCoze struct {
-	*Coze
-	When time.Time
+type KeyGap struct {
+	*Gap
+	Key string
 }
 
-const Day = time.Hour * 24
-
-func CountByDay(paths []string, d Decoder) <-chan *TimeCoze {
-	q := make(chan *TimeCoze)
+func Gaps(paths []string, d Decoder) <-chan *KeyGap {
+	q := make(chan *KeyGap)
 	go func() {
 		defer close(q)
 
-		gs := make(map[int]*TimeCoze)
-		ps := make(map[int]Packet)
+		gs := make(map[string]Packet)
 		for p := range Walk(paths, d) {
-			id, _ := p.Id()
+			id := defaultPacketKey(p)
+			if g := p.Diff(gs[id]); g != nil {
+				k := &KeyGap{
+					Key: id,
+					Gap: g,
+				}
+				q <- k
+			}
+			gs[id] = p
+		}
+	}()
+	return q
+}
+
+type KeyTimeCoze struct {
+	*Coze
+	Key  string
+	When time.Time
+}
+
+func CountByDay(paths []string, d Decoder) <-chan *KeyTimeCoze {
+	q := make(chan *KeyTimeCoze)
+	go func() {
+		defer close(q)
+
+		gs := make(map[string]*KeyTimeCoze)
+		ps := make(map[string]Packet)
+		for p := range Walk(paths, d) {
+			id := defaultPacketKey(p)
 			c := gs[id]
 			if c != nil && p.Timestamp().Sub(c.When) >= Day {
 				q <- c
 				delete(gs, id)
 			}
 			if _, ok := gs[id]; !ok {
-				c = &TimeCoze{
-					Coze: &Coze{Id: id},
+				i, _ := p.Id()
+				c = &KeyTimeCoze{
+					Coze: &Coze{Id: i},
+					Key:  id,
 					When: p.Timestamp().Truncate(Day),
 				}
 			}
@@ -114,23 +143,6 @@ func Infos(paths []string, d Decoder) <-chan *Info {
 	return q
 }
 
-func Gaps(paths []string, d Decoder) <-chan *Gap {
-	q := make(chan *Gap)
-	go func() {
-		defer close(q)
-
-		gs := make(map[int]Packet)
-		for p := range Walk(paths, d) {
-			id, _ := p.Id()
-			if g := p.Diff(gs[id]); g != nil {
-				q <- g
-			}
-			gs[id] = p
-		}
-	}()
-	return q
-}
-
 func walk(p string, q chan Packet, d Decoder) error {
 	return filepath.Walk(p, func(p string, i os.FileInfo, err error) error {
 		if err != nil {
@@ -151,4 +163,21 @@ func walk(p string, q chan Packet, d Decoder) error {
 		}
 		return nil
 	})
+}
+
+func defaultPacketKey(p Packet) string {
+	switch p := p.(type) {
+	case *TMPacket:
+		return fmt.Sprint(p.CCSDS.Apid())
+	case *PDPacket:
+		return fmt.Sprintf("0x%x", p.UMI.Code[:])
+	case *VMUPacket:
+		return p.VMU.Channel.String()
+	case HRPacket:
+		i, _ := p.Id()
+		return fmt.Sprintf("%x/%s", i, p.String())
+	default:
+		i, _ := p.Id()
+		return fmt.Sprint(i)
+	}
 }
