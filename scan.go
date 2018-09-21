@@ -1094,6 +1094,15 @@ func readTime5(coarse uint32, fine uint8) time.Time {
 	return t.Add(ms).UTC()
 }
 
+func splitTime5(t time.Time, delta time.Duration) (uint32, uint8) {
+	t = t.Add(delta)
+
+	s, n := float64(t.Unix()), float64(t.UnixNano())/1000000.0
+	m := (n - (s * 1000)) / 1000 * 255
+
+	return uint32(s), uint8(m)
+}
+
 func readTime6(coarse uint32, fine uint16) time.Time {
 	t := time.Unix(int64(coarse), 0).UTC()
 
