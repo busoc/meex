@@ -7,7 +7,7 @@ import (
 var replayCommand = &cli.Command{
 	Usage: "replay [-k] [-d] [-r] <addr>",
 	Short: "replay packets from rt files",
-	Run:   runReplay,
+	// Run:   runReplay,
 }
 
 func runReplay(cmd *cli.Command, args []string) error {

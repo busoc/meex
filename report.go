@@ -169,7 +169,7 @@ func runError(cmd *cli.Command, args []string) error {
 }
 
 func runCount(cmd *cli.Command, args []string) error {
-	const row = "%20s | %16s | %8d | %8d | %8dMB | %8d"
+	const row = "%20s | %20s | %8d | %8d | %8dMB | %8d"
 
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")

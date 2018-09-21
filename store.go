@@ -113,7 +113,12 @@ func copyUDP(addr string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	c, err := net.ListenUDP("udp", a)
+	var c *net.UDPConn
+	if a.IP.IsMulticast() {
+		c, err = net.ListenMulticastUDP("udp", nil, a)
+	} else {
+		c, err = net.ListenUDP("udp", a)
+	}
 	if err != nil {
 		return err
 	}
