@@ -172,9 +172,10 @@ func storeVMU(bs []byte) ([]byte, error) {
 	vs := make([]byte, len(bs)+18)
 	binary.LittleEndian.PutUint32(vs, uint32(len(bs))+14)
 
+	//copy VMU timestamp from bs
+	copy(vs[7:], bs[16:20])
+
 	c, f := splitTime5(time.Now(), 0)
-	binary.BigEndian.PutUint32(vs[7:], c)
-	vs[11] = byte(f)
 	binary.BigEndian.PutUint32(vs[12:], c)
 	vs[16] = byte(f)
 
