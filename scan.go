@@ -551,6 +551,8 @@ type VMUCommonHeader struct {
 	Stream   uint16
 	Counter  uint32
 	UPI      [32]byte
+
+	Valid bool
 }
 
 func (v *VMUCommonHeader) Id() (int, int) {
@@ -598,7 +600,7 @@ func (v *VMUCommonHeader) Reception() time.Time {
 }
 
 func (v *VMUCommonHeader) Error() bool {
-	return false
+	return !v.Valid
 }
 
 func (v *VMUCommonHeader) Less(o Packet) bool {
@@ -647,7 +649,7 @@ type Image struct {
 	Payload []byte
 }
 
-func decodeImage(bs []byte) (*Image, error) {
+func decodeImage(bs []byte, valid bool) (*Image, error) {
 	r := bytes.NewReader(bs)
 	var (
 		c VMUCommonHeader
@@ -671,6 +673,7 @@ func decodeImage(bs []byte) (*Image, error) {
 	if _, err := io.ReadFull(r, c.UPI[:]); err != nil {
 		return nil, err
 	}
+	c.Valid = valid
 
 	i := Image{
 		VMUCommonHeader: &c,
@@ -709,7 +712,7 @@ type Table struct {
 	Payload []byte
 }
 
-func decodeTable(bs []byte) (*Table, error) {
+func decodeTable(bs []byte, valid bool) (*Table, error) {
 	r := bytes.NewReader(bs)
 
 	var c VMUCommonHeader
@@ -723,6 +726,8 @@ func decodeTable(bs []byte) (*Table, error) {
 	if _, err := io.ReadFull(r, c.UPI[:]); err != nil {
 		return nil, err
 	}
+	c.Valid = valid
+
 	t := Table{
 		VMUCommonHeader: &c,
 		Payload:         bs,
@@ -793,6 +798,8 @@ type VMUPacket struct {
 	HRH     *HRDLHeader
 	VMU     *VMUHeader
 	Payload []byte
+	Sum     uint32
+	Control uint32
 }
 
 func DecodeVMU() Decoder {
@@ -832,7 +839,12 @@ func decodeVMU(bs []byte) (Packet, error) {
 		HRH:     &h,
 		VMU:     &v,
 		Payload: bs,
+		Sum: binary.LittleEndian.Uint32(bs[len(bs)-4:]),
 	}
+	for i := HRDLHeaderLen+8; i < len(bs)-4; i++ {
+		p.Control += uint32(bs[i])
+	}
+
 	return &p, nil
 }
 
@@ -841,12 +853,12 @@ func (v *VMUPacket) Data() (HRPacket, error) {
 		d   HRPacket
 		err error
 	)
-	switch v.VMU.Channel {
+	switch valid := v.Control == v.Sum; v.VMU.Channel {
 	default:
 	case ChannelVic1, ChannelVic2:
-		d, err = decodeImage(v.Payload[HRDLHeaderLen+VMUHeaderLen:])
+		d, err = decodeImage(v.Payload[HRDLHeaderLen+VMUHeaderLen:], valid)
 	case ChannelLRSD:
-		d, err = decodeTable(v.Payload[HRDLHeaderLen+VMUHeaderLen:])
+		d, err = decodeTable(v.Payload[HRDLHeaderLen+VMUHeaderLen:], valid)
 	}
 	return d, err
 }

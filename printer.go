@@ -102,7 +102,7 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 }
 
 func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %04x || %s | %9d | %6d | %s | %5s || %02x | %s | %9d | %16s || %x | %s"
+	const row = "%9d | %04x || %s | %9d | %6d | %s | %5s || %02x | %s | %9d | %16s | %08x | %08x | %3s || %x | %s"
 
 	a := p.HRH.Acquisition.Add(delta).Format(TimeFormat)
 	x := p.HRH.Reception.Sub(p.HRH.Acquisition)
@@ -132,7 +132,11 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 		diff = g.Missing()
 	}
 	sum := md5.Sum(p.Payload)
-	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence(), v.String(), sum, x)
+	bad := "-"
+	if p.Sum != p.Control {
+		bad = "bad"
+	}
+	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence(), v.String(),  p.Sum, p.Control, bad, sum, x)
 }
 
 func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {

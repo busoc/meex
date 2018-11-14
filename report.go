@@ -42,7 +42,7 @@ func runList(cmd *cli.Command, args []string) error {
 	format := cmd.Flag.String("f", "", "format")
 	id := cmd.Flag.Int("i", 0, "")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
-	erronly := cmd.Flag.Bool("e", false, "error only")
+	erronly := cmd.Flag.Bool("e", false, "include invalid packets")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func runList(cmd *cli.Command, args []string) error {
 	var size, total uint64
 	n := time.Now()
 	for p := range queue {
-		if *erronly && !p.Error() {
+		if !*erronly && p.Error() {
 			continue
 		}
 		total++
