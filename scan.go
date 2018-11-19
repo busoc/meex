@@ -864,7 +864,10 @@ func (v *VMUPacket) Data() (HRPacket, error) {
 }
 
 func (v *VMUPacket) Error() bool {
-	return v.HRH.Error != 0
+	if v.HRH.Error != 0 {
+		return true
+	}
+	return v.Sum != v.Control
 }
 
 func (v *VMUPacket) PacketInfo() *Info {
