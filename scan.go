@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/adler32"
@@ -12,6 +13,8 @@ import (
 	"os"
 	"time"
 )
+
+var ErrShortBuffer = errors.New("need more bytes")
 
 const Leap = 18 * time.Second
 
@@ -125,6 +128,9 @@ func (u *UMIHeader) UnmarshalBinary(bs []byte) error {
 		coarse uint32
 		fine   uint8
 	)
+	if len(bs) < UMIHeaderLen {
+		return ErrShortBuffer
+	}
 	r := bytes.NewReader(bs)
 	binary.Read(r, binary.LittleEndian, &u.Size)
 	binary.Read(r, binary.BigEndian, &u.State)
@@ -245,6 +251,9 @@ type PTHHeader struct {
 func (p *PTHHeader) UnmarshalBinary(bs []byte) error {
 	if p == nil {
 		p = new(PTHHeader)
+	}
+	if len(bs) < PTHHeaderLen {
+		return ErrShortBuffer
 	}
 	r := bytes.NewReader(bs)
 	var (
@@ -368,6 +377,9 @@ type ESAHeader struct {
 func (e *ESAHeader) UnmarshalBinary(bs []byte) error {
 	if e == nil {
 		e = new(ESAHeader)
+	}
+	if len(bs) < ESAHeaderLen {
+		return ErrShortBuffer
 	}
 	r := bytes.NewReader(bs)
 
@@ -502,6 +514,9 @@ type HRDLHeader struct {
 func (h *HRDLHeader) UnmarshalBinary(bs []byte) error {
 	if h == nil {
 		h = new(HRDLHeader)
+	}
+	if len(bs) < HRDLHeaderLen {
+		return ErrShortBuffer
 	}
 	var (
 		coarse uint32
@@ -772,6 +787,9 @@ func (v *VMUHeader) UnmarshalBinary(bs []byte) error {
 	if v == nil {
 		v = new(VMUHeader)
 	}
+	if len(bs) < VMUHeaderLen {
+		return ErrShortBuffer
+	}
 	var (
 		spare  uint16
 		coarse uint32
@@ -839,9 +857,9 @@ func decodeVMU(bs []byte) (Packet, error) {
 		HRH:     &h,
 		VMU:     &v,
 		Payload: bs,
-		Sum: binary.LittleEndian.Uint32(bs[len(bs)-4:]),
+		Sum:     binary.LittleEndian.Uint32(bs[len(bs)-4:]),
 	}
-	for i := HRDLHeaderLen+8; i < len(bs)-4; i++ {
+	for i := HRDLHeaderLen + 8; i < len(bs)-4; i++ {
 		p.Control += uint32(bs[i])
 	}
 
