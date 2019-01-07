@@ -11,27 +11,28 @@ import (
 const TimeFormat = "2006-01-02 15:04:05.000"
 
 var countCommand = &cli.Command{
-	Usage: "count [-k] [-g] [-x] <rt,...>",
+	Usage: "count [-k type] [-g gps-time] <file...>",
 	Short: "count packets available into RT file(s)",
 	Run:   runCount,
 }
 
 var listCommand = &cli.Command{
-	Usage: "list [-f] [-k] [-g] [-i] <rt,...>",
+	Usage: "list [-e with-invalid] [-f format] [-k type] [-g gps-time] [-i pid] <file...>",
 	Alias: []string{"ls"},
 	Short: "list packets present into RT file(s)",
 	Run:   runList,
 }
 
 var diffCommand = &cli.Command{
-	Usage: "diff [-g] [-k] [-x] [-d] <rt,...>",
-	Alias: []string{"gaps"},
+	Usage: "diff [-g gps-time] [-k type] [-d duration] <file...>",
+	Alias: []string{"show-gaps"},
 	Short: "report missing packets in RT file(s)",
 	Run:   runDiff,
 }
 
 var errCommand = &cli.Command{
-	Usage: "verify [-k] [-g] <rt,...>",
+	Usage: "verify [-k type] <file...>",
+	Alias: []string{"check"},
 	Short: "report error in packets found in RT file(s)",
 	Run:   runError,
 }
@@ -108,35 +109,12 @@ func runDiff(cmd *cli.Command, args []string) error {
 		}
 	}
 	log.Printf("%d gaps found (%d missing packets - %s)", count, missing, elapsed)
-
-	// gs := make(map[int]Packet)
-	// for curr := range Walk(cmd.Flag.Args(), kind.Decod) {
-	// 	count++
-	// 	size += uint64(curr.Len())
-	//
-	// 	id, _ := curr.Id()
-	// 	if g := curr.Diff(gs[id]); g != nil {
-	// 		missing += uint64(g.Missing())
-	// 		elapsed += g.Duration()
-	//
-	// 		if g.Duration() >= *duration {
-	// 			p := g.Starts.Add(delta).Format(TimeFormat)
-	// 			c := g.Ends.Add(delta).Format(TimeFormat)
-	//
-	// 			id := strconv.FormatInt(int64(g.Id), base)
-	// 			log.Printf(row, id, p, c, g.Last, g.First, g.Missing(), g.Duration())
-	// 		}
-	// 	}
-	// 	gs[id] = curr
-	// }
-	// log.Printf("%d packets found (%dMB) - missing: %d (time: %s)", count, size>>20, missing, elapsed)
 	return nil
 }
 
 func runError(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
-	// aggr := cmd.Flag.String("g", "", "aggregate")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -164,7 +142,7 @@ func runError(cmd *cli.Command, args []string) error {
 	for e, c := range cs {
 		log.Printf("%04x: %8d", e, c)
 	}
-	log.Printf("%d/%d errors found (%s)", err, total, elapsed)
+	log.Printf("%d errors found (%d packets, %s)", err, total, elapsed)
 	return nil
 }
 
