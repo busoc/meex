@@ -13,7 +13,9 @@ import (
 )
 
 var commands = []*cli.Command{
-	distribCommand,
+	// distribCommand,
+	// pushCommand,
+	// replayCommand,
 	sortCommand,
 	mixCommand,
 	scanCommand,
@@ -28,9 +30,7 @@ var commands = []*cli.Command{
 	diffCommand,
 	countCommand,
 	errCommand,
-	pushCommand,
 	storeCommand,
-	replayCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive

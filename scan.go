@@ -154,7 +154,7 @@ type PDPacket struct {
 func DecodePD() Decoder {
 	f := func(bs []byte) (Packet, error) {
 		if len(bs) < UMIHeaderLen {
-			return nil, io.ErrShortBuffer
+			return nil, ErrShortBuffer
 		}
 		var u UMIHeader
 		if err := u.UnmarshalBinary(bs); err != nil {
@@ -411,7 +411,7 @@ type TMPacket struct {
 func DecodeTM() Decoder {
 	f := func(bs []byte) (Packet, error) {
 		if len(bs) < PTHHeaderLen+CCSDSHeaderLen+ESAHeaderLen {
-			return nil, io.ErrShortBuffer
+			return nil, ErrShortBuffer
 		}
 		var (
 			p PTHHeader
@@ -841,7 +841,7 @@ func DecodeHRD() Decoder {
 
 func decodeVMU(bs []byte) (Packet, error) {
 	if len(bs) < HRDLHeaderLen+VMUHeaderLen {
-		return nil, io.ErrShortBuffer
+		return nil, ErrShortBuffer
 	}
 	var (
 		h HRDLHeader
