@@ -17,20 +17,20 @@ import (
 )
 
 var sumCommand = &cli.Command{
-	Usage: "cksum [-d] <rt,...>",
+	Usage: "cksum [-d algorithm] <file...>",
 	Alias: []string{"sum"},
 	Short: "compute the checksum of RT file(s)",
 	Run:   runSum,
 }
 
 var scanCommand = &cli.Command{
-	Usage: "scan <rt,...>",
+	Usage: "scan <file...>",
 	Short: "fast scanning of RT file(s)",
 	Run:   runScan,
 }
 
 var indexCommand = &cli.Command{
-	Usage: "index [-q] [-k] <rt,...>",
+	Usage: "index [-q quiet] [-k type] <file...>",
 	Short: "create an index of packets found in RT files",
 	Run:   runIndex,
 }

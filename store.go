@@ -70,7 +70,7 @@ func (b *buffer) Close() error {
 }
 
 var storeCommand = &cli.Command{
-	Usage: "store [-k] [-d] [-i] [-p] <addr>",
+	Usage: "store [-k type] [-d datadir] [-i interval] [-p protocol] <addr>",
 	Short: "listen and store incoming packets in rt.dat files",
 	Run:   runStore,
 }

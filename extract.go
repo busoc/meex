@@ -21,7 +21,7 @@ var dispatchCommand = &cli.Command{
 
 var extractCommand = &cli.Command{
 	Usage: "extract [-p pid] [-k type] [-t time] [-i interval] [-d datadir] [-c body-only] <file...>",
-	Alias: []string{"filter", "sort"},
+	Alias: []string{"filter"},
 	Short: "extract packets from RT file(s)",
 	Run:   runExtract,
 }

@@ -9,21 +9,21 @@ import (
 )
 
 var takeCommand = &cli.Command{
-	Usage: "take [-n] <source> <target>",
+	Usage: "take [-n parts] <source> <target>",
 	Alias: []string{"split"},
 	Short: "splits randomly packets from source file to target file(s) into a new file",
 	Run:   runTake,
 }
 
 var mixCommand = &cli.Command{
-	Usage: "mix [-s] [-t] [-u] <file>",
+	Usage: "mix [-s source] [-t target] [-u uniq] <file>",
 	Alias: []string{"blend"},
 	Short: "take two rt files and mix their packets randomly into a new one",
 	Run:   runMix,
 }
 
 var shuffleCommand = &cli.Command{
-	Usage: "shuffle [-k] <source> <target>",
+	Usage: "shuffle [-k type] <source> <target>",
 	Short: "shuffle packets from RT files",
 	Run:   runShuffle,
 }
