@@ -6,47 +6,22 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/midbel/cli"
 	"golang.org/x/sync/errgroup"
 )
 
-type byId struct {
-	id    int
-	inner Decoder
-}
-
-func DecodeById(id int, d Decoder) Decoder {
-	return &byId{id, d}
-}
-
-func (i *byId) Decode(bs []byte) (Packet, error) {
-	if i.inner.Decode == nil {
-		return nil, ErrSkip
-	}
-	p, err := i.inner.Decode(bs)
-	if err != nil {
-		return p, err
-	}
-	if i.id > 0 {
-		id, _ := p.Id()
-		if id != i.id {
-			return nil, ErrSkip
-		}
-	}
-	return p, nil
-}
-
 var dispatchCommand = &cli.Command{
-	Usage: "dispatch [-k] [-d] <rt,...>",
+	Usage: "dispatch [-k type] [-d datadir] <file...>",
 	Short: "dispatch packets in the correct location",
 	Run:   runDispatch,
 }
 
 var extractCommand = &cli.Command{
-	Usage: "extract [-p] [-k] [-t] [-i] [-d] <rt,...>",
-	Alias: []string{"filter"},
+	Usage: "extract [-p pid] [-k type] [-t time] [-i interval] [-d datadir] [-c body-only] <file...>",
+	Alias: []string{"filter", "sort"},
 	Short: "extract packets from RT file(s)",
 	Run:   runExtract,
 }
@@ -101,10 +76,15 @@ func runExtract(cmd *cli.Command, args []string) error {
 		d    Decoder
 		size int
 	)
-	switch *kind {
+	switch strings.ToLower(*kind) {
 	default:
 		return fmt.Errorf("unsupported packet type %s", *kind)
-	case "tm", "TM":
+	case "pd", "pp":
+		if *cut {
+			size = UMIHeaderLen
+		}
+		d = DecodePD()
+	case "tm", "pth":
 		if *cut {
 			size = PTHHeaderLen
 		}

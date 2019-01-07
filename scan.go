@@ -34,6 +34,32 @@ var (
 	GPS  = time.Date(1980, 1, 6, 0, 0, 0, 0, time.UTC)
 )
 
+type byId struct {
+	id    int
+	inner Decoder
+}
+
+func DecodeById(id int, d Decoder) Decoder {
+	return &byId{id, d}
+}
+
+func (i *byId) Decode(bs []byte) (Packet, error) {
+	if i.inner.Decode == nil {
+		return nil, ErrSkip
+	}
+	p, err := i.inner.Decode(bs)
+	if err != nil {
+		return p, err
+	}
+	if i.id > 0 {
+		id, _ := p.Id()
+		if id != i.id {
+			return nil, ErrSkip
+		}
+	}
+	return p, nil
+}
+
 type DecoderFunc func([]byte) (Packet, error)
 
 func (d DecoderFunc) Decode(bs []byte) (Packet, error) {
