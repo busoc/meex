@@ -11,6 +11,8 @@ import (
 	"hash/adler32"
 	"io"
 	"os"
+	"strings"
+	"unicode"
 	"time"
 )
 
@@ -659,7 +661,12 @@ func (v *VMUCommonHeader) Auxiliary() time.Time {
 func (v *VMUCommonHeader) String() string {
 	bs := bytes.Trim(v.UPI[:], "\x00")
 	if len(bs) > 0 {
-		return string(bs)
+		return strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+				return r
+			}
+			return '*'
+		}, string(bs))
 	}
 	return v.Type()
 }
