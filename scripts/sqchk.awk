@@ -39,8 +39,11 @@ function checkBad(bad, chan, origin, vmu) {
       delta = 0
     }
 
-    time = trimSpace(baddata[chan][origin]["time"])
-    printf(badrow, chan, time, trimSpace(vmu["time"]), baddata[chan][origin]["seq"], vmu["seq"], delta, origin)
+    time = baddata[chan][origin]["time"]
+    if (time == "") {
+      time = vmu["time"]
+    }
+    printf(badrow, chan, time, vmu["time"], baddata[chan][origin]["seq"], vmu["seq"], delta, origin)
 
     delete baddata[chan][origin]
   }
@@ -60,17 +63,28 @@ BEGIN{
   FS="([[:space:]]+\\|+[[:space:]]+)|,|;"
   #channel, vmu dtstart, vmu dtend, vmu first, vmu last, vmu delta, hrd origin, hrd dtstart, hrd dtend, hrd start, hrd end
   # gaprow = "G | %4s | %s | %8d | %8d | %4d || %2d | %s | %s | %8d | %8d | %4d | %s\n"
-  gaprow = "G | %4s | %s | %s | %8d | %8d | %4d || %2d | %s | %s | %8d | %8d | %4d | %s\n"
-  badrow = "B | %4s | %s | %s | %8d | %8d | %4d || %2d\n"
+  gaprow = "G | %4s | %s | %s | %8d | %8d | %8d || %2d | %s | %s | %8d | %8d | %4d | %s\n"
+  badrow = "B | %4s | %s | %s | %8d | %8d | %8d || %2d\n"
 }
 NF < 11{
   next
 }
-/invalid|bad/ {
+/\s+(invalid|bad)\s+/ {
+  chan = trimSpace($7)
+  switch (chan) {
+  case "lrsd":
+    lrsd["bad"]++
+    break
+  case "vic1":
+    vic1["bad"]++
+    break
+  case "vic2":
+    vic2["bad"]++
+    break
+  }
   if (keepOrigin($8) == 0) {
     next
   }
-  chan = trimSpace($7)
   origin = trimSpace($8)
   baddata[chan][origin]["count"]++
   if (!("seq" in baddata[chan][origin])) {
@@ -80,6 +94,7 @@ NF < 11{
   # next
 }
 /lrsd/{
+  lrsd["total"]++
   if (keepOrigin($8) == 0) {
     next
   }
@@ -87,7 +102,6 @@ NF < 11{
   if (origin in sciences) {
     lrsd["missing"] += checkGap(sciences[origin], lrsd)
   }
-  lrsd["total"]++
   lrsd["time"] = $3
   lrsd["seq"] = $4
   checkBad($14, $7, $8, lrsd)
@@ -96,6 +110,7 @@ NF < 11{
   sciences[origin]["upi"] = $11
 }
 /vic1/{
+  vic1["total"]++
   if (keepOrigin($8) == 0) {
     next
   }
@@ -103,7 +118,6 @@ NF < 11{
   if (origin in vicone) {
     vic1["missing"] += checkGap(vicone[origin], vic1)
   }
-  vic1["total"]++
   vic1["time"] = $3
   vic1["seq"] = $4
   checkBad($14, $7, $8, vic1)
@@ -112,6 +126,7 @@ NF < 11{
   vicone[origin]["upi"] = $11
 }
 /vic2/{
+  vic2["total"]++
   if (keepOrigin($8) == 0) {
     next
   }
@@ -119,7 +134,6 @@ NF < 11{
   if (origin in victwo) {
     vic2["missing"] += checkGap(victwo[origin], vic2)
   }
-  vic2["total"]++
   vic2["time"] = $3
   vic2["seq"] = $4
   checkBad($14, $7, $8, vic2)
@@ -144,19 +158,13 @@ END{
     }
     for (origin in baddata[chan]) {
       checkBad("", chan, origin, vmu)
+      for (origin in baddata[chan]) badvic2 += baddata[chan][origin]["count"]
     }
   }
   # print
   printf("\n%d VMU packets\n", lrsd["total"]+vic1["total"]+vic2["total"])
-  printf("missing %d LRSD packets (total: %d) \n", lrsd["missing"], lrsd["total"])
-  printf("missing %d VIC1 packets (total: %d)\n", vic1["missing"], vic1["total"])
-  printf("missing %d VIC2 packets (total: %d)\n", vic2["missing"], vic2["total"])
+  printf("missing %d LRSD packets (total: %d, bad: %d) \n", lrsd["missing"], lrsd["total"], lrsd["bad"])
+  printf("missing %d VIC1 packets (total: %d, bad: %d)\n", vic1["missing"], vic1["total"], vic1["bad"])
+  printf("missing %d VIC2 packets (total: %d, bad: %d)\n", vic2["missing"], vic2["total"], vic2["bad"])
   print "\n"
-  # for (channel in baddata) {
-  #   chan=channel
-  #   gsub(/\s+/, "", chan)
-  #   for (origin in baddata[channel]) {
-  #     printf("%5d bad packets found for %02d (channel: %s)\n", baddata[channel][origin]["count"], origin, chan)
-  #   }
-  # }
 }
