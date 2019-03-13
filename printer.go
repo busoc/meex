@@ -18,12 +18,18 @@ func NewPrinter(f string) (Printer, error) {
 		p   Printer
 		err error
 	)
+	hist := make(map[int]Packet)
 	switch strings.ToLower(f) {
 	case "":
-		p = &logPrinter{logger: log.New(os.Stdout, "", 0)}
+		p = &logPrinter{
+			logger:  log.New(os.Stdout, "", 0),
+			history: hist,
+		}
 	case "csv":
-		c := csv.NewWriter(os.Stdout)
-		p = &csvPrinter{c}
+		p = &csvPrinter{
+			writer:  csv.NewWriter(os.Stdout),
+			history: hist,
+		}
 	default:
 		err = fmt.Errorf("unsupported output format")
 	}
@@ -39,68 +45,23 @@ type Printer interface {
 }
 
 type logPrinter struct {
-	logger *log.Logger
-	last   Packet
+	logger  *log.Logger
+	history map[int]Packet
 }
 
 func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
+	id, _ := p.Id()
+	last := pt.history[id]
 	switch p := p.(type) {
 	case *VMUPacket:
-		printVMUPacket(pt.logger, p, p.Diff(pt.last), delta)
+		printVMUPacket(pt.logger, p, p.Diff(last), delta)
 	case *TMPacket:
-		printTMPacket(pt.logger, p, p.Diff(pt.last), delta)
+		printTMPacket(pt.logger, p, p.Diff(last), delta)
 	case *PDPacket:
 		printPDPacket(pt.logger, p, delta)
 	}
-	pt.last = p
+	pt.history[id] = p
 	return nil
-}
-
-type csvPrinter struct {
-	writer *csv.Writer
-}
-
-func (c *csvPrinter) Flush() error {
-	c.writer.Flush()
-	return c.writer.Error()
-}
-
-func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
-	var row []string
-	switch p := p.(type) {
-	case *VMUPacket:
-		row = []string{
-			strconv.Itoa(p.Sequence()),
-			strconv.Itoa(p.Len()),
-			strconv.FormatUint(uint64(p.HRH.Error), 10),
-			strconv.FormatUint(uint64(p.HRH.Payload), 10),
-			p.VMU.Channel.String(),
-			strconv.FormatUint(uint64(p.VMU.Origin), 10),
-			p.HRH.Acquisition.Add(delta).Format(TimeFormat),
-			p.HRH.Reception.Add(delta).Format(TimeFormat),
-			fmt.Sprintf("%x", md5.Sum(p.Payload)),
-		}
-	case *TMPacket:
-		row = []string{
-			strconv.Itoa(p.CCSDS.Sequence()),
-			strconv.Itoa(p.Len()),
-			strconv.Itoa(p.CCSDS.Apid()),
-			p.ESA.Acquisition.Add(delta).Format(TimeFormat),
-			p.PTH.Reception.Add(delta).Format(TimeFormat),
-			fmt.Sprintf("%x", md5.Sum(p.Payload)),
-		}
-	case *PDPacket:
-		row = []string{
-			p.Timestamp().Format(TimeFormat),
-			fmt.Sprintf("%x", p.UMI.Code),
-			p.UMI.State.String(),
-			p.UMI.Type.String(),
-			strconv.Itoa(p.Len()),
-			fmt.Sprintf("%x", p.Payload[len(p.Payload)-int(p.UMI.Len):]),
-			fmt.Sprintf("%x", md5.Sum(p.Payload)),
-		}
-	}
-	return c.writer.Write(row)
 }
 
 func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
@@ -162,4 +123,91 @@ func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
 		ds = ds[:16]
 	}
 	logger.Printf(row, a, p.UMI.State, p.UMI.Code, p.UMI.Orbit, p.UMI.Len, p.UMI.Type, ds)
+}
+
+type csvPrinter struct {
+	writer  *csv.Writer
+	history map[int]Packet
+}
+
+func (c *csvPrinter) Flush() error {
+	c.writer.Flush()
+	return c.writer.Error()
+}
+
+func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
+	id, _ := p.Id()
+	last := c.history[id]
+	var row []string
+	switch p := p.(type) {
+	case *VMUPacket:
+		hr, err := p.Data()
+		if err != nil {
+			return err
+		}
+		var v *VMUCommonHeader
+		switch hr := hr.(type) {
+		case *Image:
+			v = hr.VMUCommonHeader
+		case *Table:
+			v = hr.VMUCommonHeader
+		default:
+			return err
+		}
+		var diff int
+		g := p.Diff(last)
+		if g != nil {
+			diff = g.Missing()
+		}
+		var rt string
+		if v.Origin == p.VMU.Origin {
+			rt = "realtime"
+		} else {
+			rt = "playback"
+		}
+		sum := md5.Sum(p.Payload)
+		bad := "-"
+		if p.Sum != p.Control {
+			bad = Bad
+		}
+		row = []string{
+			strconv.Itoa(p.Len()),
+			fmt.Sprintf("%04x", p.HRH.Error),
+			p.HRH.Acquisition.Add(delta).Format(TimeFormat),
+			strconv.Itoa(p.Sequence()),
+			strconv.Itoa(diff),
+			rt,
+			p.VMU.Channel.String(),
+			fmt.Sprintf("%02x", v.Origin),
+			v.Acquisition().Format(TimeFormat),
+			strconv.Itoa(v.Sequence()),
+			v.String(),
+			fmt.Sprintf("%08x", p.Sum),
+			fmt.Sprintf("%08x", p.Control),
+			bad,
+			fmt.Sprintf("%x", sum),
+			p.HRH.Reception.Sub(p.HRH.Acquisition).String(),
+		}
+	case *TMPacket:
+		row = []string{
+			strconv.Itoa(p.CCSDS.Sequence()),
+			strconv.Itoa(p.Len()),
+			strconv.Itoa(p.CCSDS.Apid()),
+			p.ESA.Acquisition.Add(delta).Format(TimeFormat),
+			p.PTH.Reception.Add(delta).Format(TimeFormat),
+			fmt.Sprintf("%x", md5.Sum(p.Payload)),
+		}
+	case *PDPacket:
+		row = []string{
+			p.Timestamp().Format(TimeFormat),
+			fmt.Sprintf("%x", p.UMI.Code),
+			p.UMI.State.String(),
+			p.UMI.Type.String(),
+			strconv.Itoa(p.Len()),
+			fmt.Sprintf("%x", p.Payload[len(p.Payload)-int(p.UMI.Len):]),
+			fmt.Sprintf("%x", md5.Sum(p.Payload)),
+		}
+	}
+	c.history[id] = p
+	return c.writer.Write(row)
 }

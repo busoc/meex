@@ -12,8 +12,8 @@ import (
 	"io"
 	"os"
 	"strings"
-	"unicode"
 	"time"
+	"unicode"
 )
 
 var ErrShortBuffer = errors.New("need more bytes")
