@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const Bad = "invalid"
+
 func NewPrinter(f string) (Printer, error) {
 	var (
 		p   Printer
@@ -134,7 +136,7 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 	sum := md5.Sum(p.Payload)
 	bad := "-"
 	if p.Sum != p.Control {
-		bad = "bad"
+		bad = Bad
 	}
 	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence(), v.String(), p.Sum, p.Control, bad, sum, x)
 }
