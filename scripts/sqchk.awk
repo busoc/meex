@@ -69,7 +69,8 @@ BEGIN{
 NF < 11{
   next
 }
-/\s+(invalid|bad)\s+/ {
+# /\s+(invalid|bad)\s+|invalid/ {
+/$14=="invalid" || $14=="bad"/ {
   chan = trimSpace($7)
   switch (chan) {
   case "lrsd":
