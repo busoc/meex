@@ -34,16 +34,28 @@ function checkBad(bad, chan, origin, vmu) {
   origin = trimSpace(origin)
 
   if (chan in baddata && origin in baddata[chan]) {
-    delta = vmu["seq"] - baddata[chan][origin]["seq"] - 1
-    if (delta < 0) {
-      delta = 0
-    }
+    # delta = vmu["seq"] - baddata[chan][origin]["seq"] - 1
+    # if (delta < 0) {
+    #   delta = 0
+    # }
+    #
+    # time = baddata[chan][origin]["time"]
+    # if (time == "") {
+    #   time = vmu["time"]
+    # }
+    dtstart = baddata[chan][origin]["dtstart"]
+    dtend = baddata[chan][origin]["dtend"]
+    first = baddata[chan][origin]["first"]
+    last = baddata[chan][origin]["last"]
 
-    time = baddata[chan][origin]["time"]
-    if (time == "") {
-      time = vmu["time"]
+    delta = last - first
+    if (delta <= 0) {
+      last = first
+      dtend = dtstart
+      delta = 1
     }
-    printf(badrow, chan, time, vmu["time"], baddata[chan][origin]["seq"], vmu["seq"], delta, origin)
+    printf(badrow, chan, dtstart, dtend, first, last, delta, origin)
+    # printf(badrow, chan, time, vmu["time"], baddata[chan][origin]["seq"], vmu["seq"], delta, origin)
 
     delete baddata[chan][origin]
   }
@@ -91,6 +103,11 @@ NF < 11{
   if (!("seq" in baddata[chan][origin])) {
     baddata[chan][origin]["seq"] = $4
     baddata[chan][origin]["time"] = $3
+    baddata[chan][origin]["first"] = $4
+    baddata[chan][origin]["dtstart"] = $3
+  } else {
+    baddata[chan][origin]["last"] = $4
+    baddata[chan][origin]["dtend"] = $3
   }
   # next
 }
