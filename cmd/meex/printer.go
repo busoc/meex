@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/midbel/xxh"
 )
 
 const Bad = "invalid"
@@ -94,7 +96,7 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 	if g != nil {
 		diff = g.Missing()
 	}
-	sum := md5.Sum(p.Payload)
+	sum := xxh.Sum64(p.Payload, 0)
 	bad := "-"
 	if p.Sum != p.Control {
 		bad = Bad

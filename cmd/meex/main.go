@@ -13,9 +13,6 @@ import (
 )
 
 var commands = []*cli.Command{
-	// distribCommand,
-	// pushCommand,
-	// replayCommand,
 	sortCommand,
 	mixCommand,
 	scanCommand,
