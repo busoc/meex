@@ -144,7 +144,6 @@ func copyTCP(addr string, w io.Writer) error {
 			io.Copy(w, c)
 		}(c)
 	}
-	return nil
 }
 
 func storePTH(bs []byte) ([]byte, error) {

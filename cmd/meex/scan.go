@@ -46,7 +46,8 @@ func DecodeById(id int, d Decoder) Decoder {
 }
 
 func (i *byId) Decode(bs []byte) (Packet, error) {
-	if i.inner.Decode == nil {
+	// if i.inner.Decode == nil {
+	if i.inner == nil {
 		return nil, ErrSkip
 	}
 	p, err := i.inner.Decode(bs)
@@ -1091,7 +1092,7 @@ func (r *Reader) Next() (Packet, error) {
 	if err := r.scan.Err(); err != nil {
 		return nil, err
 	}
-	if r.decoder.Decode == nil {
+	if r.decoder == nil {
 		return nil, ErrSkip
 	}
 	return r.decoder.Decode(bs)
