@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/md5"
+	// "crypto/md5"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -14,6 +14,9 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/busoc/timutil"
+	"github.com/midbel/xxh"
 )
 
 var ErrShortBuffer = errors.New("need more bytes")
@@ -171,7 +174,7 @@ func (u *UMIHeader) UnmarshalBinary(bs []byte) error {
 	binary.Read(r, binary.BigEndian, &fine)
 	binary.Read(r, binary.BigEndian, &u.Len)
 
-	u.Acquisition = readTime5(coarse, fine)
+	u.Acquisition = timutil.Join5(coarse, fine)
 	return nil
 }
 
@@ -294,7 +297,7 @@ func (p *PTHHeader) UnmarshalBinary(bs []byte) error {
 	binary.Read(r, binary.BigEndian, &coarse)
 	binary.Read(r, binary.BigEndian, &fine)
 
-	p.Reception = readTime5(coarse, fine)
+	p.Reception = timutil.Join5(coarse, fine)
 
 	return nil
 }
@@ -421,7 +424,7 @@ func (e *ESAHeader) UnmarshalBinary(bs []byte) error {
 	binary.Read(r, binary.BigEndian, &e.Info)
 	binary.Read(r, binary.BigEndian, &e.Source)
 
-	e.Acquisition = readTime5(coarse, fine)
+	e.Acquisition = timutil.Join5(coarse, fine)
 
 	return nil
 }
@@ -559,11 +562,11 @@ func (h *HRDLHeader) UnmarshalBinary(bs []byte) error {
 
 	binary.Read(r, binary.BigEndian, &coarse)
 	binary.Read(r, binary.BigEndian, &fine)
-	h.Acquisition = readTime5(coarse, fine)
+	h.Acquisition = timutil.Join5(coarse, fine)
 
 	binary.Read(r, binary.BigEndian, &coarse)
 	binary.Read(r, binary.BigEndian, &fine)
-	h.Reception = readTime5(coarse, fine)
+	h.Reception = timutil.Join5(coarse, fine)
 
 	return nil
 }
@@ -841,7 +844,7 @@ func (v *VMUHeader) UnmarshalBinary(bs []byte) error {
 	binary.Read(r, binary.LittleEndian, &fine)
 	binary.Read(r, binary.LittleEndian, &spare)
 
-	v.Acquisition = readTime6(coarse, fine)
+	v.Acquisition = timutil.Join6(coarse, fine)
 
 	return nil
 }
@@ -1019,7 +1022,7 @@ type Reader struct {
 }
 
 func NewReader(r io.Reader, d Decoder) *Reader {
-	rs := &Reader{decoder: d, digest: md5.New()}
+	rs := &Reader{decoder: d, digest: xxh.New64(0)}
 	rs.Reset(r)
 	return rs
 }
@@ -1132,9 +1135,11 @@ func ScanFile(f string) (ScanCloser, error) {
 	return &scanner{Closer: r, Scanner: Scan(r)}, nil
 }
 
+var scanBuffer = make([]byte, 4<<20)
+
 func Scan(r io.Reader) *bufio.Scanner {
 	s := bufio.NewScanner(r)
-	s.Buffer(make([]byte, 1<<20), MaxBufferSize)
+	s.Buffer(scanBuffer, MaxBufferSize)
 	s.Split(scanPackets)
 
 	return s
@@ -1144,36 +1149,11 @@ func scanPackets(bs []byte, ateof bool) (int, []byte, error) {
 	if len(bs) < 4 {
 		return 0, nil, nil
 	}
-	size := int(binary.LittleEndian.Uint32(bs))
+	size := int(binary.LittleEndian.Uint32(bs)) + 4
 
-	if len(bs) < size+4 {
+	if len(bs) < size {
 		return 0, nil, nil
 	}
-	vs := make([]byte, size+4)
-	return copy(vs, bs[:size+4]), vs, nil
-}
-
-func readTime5(coarse uint32, fine uint8) time.Time {
-	t := time.Unix(int64(coarse), 0).UTC()
-
-	fs := float64(fine) / 256.0 * 1000.0
-	ms := time.Duration(fs) * time.Millisecond
-	return t.Add(ms).UTC()
-}
-
-func splitTime5(t time.Time, delta time.Duration) (uint32, uint8) {
-	t = t.Add(delta)
-
-	s, n := float64(t.Unix()), float64(t.UnixNano())/1000000.0
-	m := (n - (s * 1000)) / 1000 * 255
-
-	return uint32(s), uint8(m)
-}
-
-func readTime6(coarse uint32, fine uint16) time.Time {
-	t := time.Unix(int64(coarse), 0).UTC()
-
-	fs := float64(fine) / 65536.0 * 1000.0
-	ms := time.Duration(fs) * time.Millisecond
-	return t.Add(ms).UTC()
+	vs := make([]byte, size)
+	return copy(vs, bs[:size]), vs, nil
 }

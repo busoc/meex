@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/busoc/timutil"
 	"github.com/midbel/cli"
 )
 
@@ -151,7 +152,7 @@ func storePTH(bs []byte) ([]byte, error) {
 	binary.LittleEndian.PutUint32(vs, uint32(len(bs))+6)
 	vs[4] = 0x09
 
-	f, c := splitTime5(time.Now(), 0)
+	f, c := timutil.Split5(time.Now())
 	binary.BigEndian.PutUint32(vs[5:], f)
 	vs[9] = byte(c)
 
@@ -174,7 +175,7 @@ func storeVMU(bs []byte) ([]byte, error) {
 	//copy VMU timestamp from bs
 	copy(vs[7:], bs[16:20])
 
-	c, f := splitTime5(time.Now(), 0)
+	c, f := timutil.Split5(time.Now())
 	binary.BigEndian.PutUint32(vs[12:], c)
 	vs[16] = byte(f)
 

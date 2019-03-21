@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/midbel/cli"
+	"github.com/midbel/xxh"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,7 +60,7 @@ func runIndex(cmd *cli.Command, args []string) error {
 		}
 		size := p.Len()
 		if !*quiet {
-			log.Printf("%10d | %s | %9d | %x", ix, t.Format(TimeFormat), size, md5.Sum(p.Bytes()))
+			log.Printf("%10d | %s | %9d | %x", ix, t.Format(TimeFormat), size, xxh.Sum64(p.Bytes(), 0))
 		}
 		ix += uint64(size)
 		data += uint64(size)

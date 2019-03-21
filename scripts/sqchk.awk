@@ -81,8 +81,8 @@ BEGIN{
 NF < 11{
   next
 }
-/\s+(invalid|bad)\s+|invalid/ {
-# /$14=="invalid" || $14=="bad"/ {
+# /\s+(invalid|bad)\s+|invalid/ {
+$14=="invalid" || $14=="bad" {
   chan = trimSpace($7)
   switch (chan) {
   case "lrsd":
@@ -100,9 +100,9 @@ NF < 11{
   }
   origin = trimSpace($8)
   baddata[chan][origin]["count"]++
-  if (!("seq" in baddata[chan][origin])) {
-    baddata[chan][origin]["seq"] = $4
-    baddata[chan][origin]["time"] = $3
+  if (!("first" in baddata[chan][origin])) {
+    # baddata[chan][origin]["seq"] = $4
+    # baddata[chan][origin]["time"] = $3
     baddata[chan][origin]["first"] = $4
     baddata[chan][origin]["dtstart"] = $3
   } else {
@@ -176,7 +176,6 @@ END{
     }
     for (origin in baddata[chan]) {
       checkBad("", chan, origin, vmu)
-      for (origin in baddata[chan]) badvic2 += baddata[chan][origin]["count"]
     }
   }
   # print

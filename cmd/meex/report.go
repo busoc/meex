@@ -2,9 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
-	"runtime"
-	// "strconv"
 	"time"
 
 	"github.com/midbel/cli"
@@ -39,18 +36,6 @@ var errCommand = &cli.Command{
 	Run:   runError,
 }
 
-func debugMemStats() {
-	const row = "alloc: %d, total: %d, heap: %d, system: %d"
-	logger := log.New(os.Stdout, "[mem-usage] ", 0)
-	tick := time.Tick(time.Second)
-	for range tick {
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-
-		logger.Printf(row, m.HeapAlloc>>20, m.TotalAlloc>>20, m.HeapSys>>20, m.Sys>>20)
-	}
-}
-
 func runList(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
@@ -58,13 +43,9 @@ func runList(cmd *cli.Command, args []string) error {
 	id := cmd.Flag.Int("i", 0, "")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
 	erronly := cmd.Flag.Bool("e", false, "include invalid packets")
-	// usage := cmd.Flag.Bool("u", false, "debug memory usage")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-	// if *usage {
-	// 	go debugMemStats()
-	// }
 	pt, err := NewPrinter(*format)
 	if err != nil {
 		return err
@@ -98,13 +79,9 @@ func runDiff(cmd *cli.Command, args []string) error {
 	cmd.Flag.Var(&kind, "k", "packet type")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
 	duration := cmd.Flag.Duration("d", 0, "duration")
-	// usage := cmd.Flag.Bool("u", false, "debug memory usage")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-	// if *usage {
-	// 	go debugMemStats()
-	// }
 	var delta time.Duration
 	if !*toGPS {
 		delta = GPS.Sub(UNIX)

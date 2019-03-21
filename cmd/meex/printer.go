@@ -53,12 +53,12 @@ type logPrinter struct {
 
 func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
 	id, _ := p.Id()
-	last := pt.history[id]
 	switch p := p.(type) {
+	default:
 	case *VMUPacket:
-		printVMUPacket(pt.logger, p, p.Diff(last), delta)
+		printVMUPacket(pt.logger, p, p.Diff(pt.history[id]), delta)
 	case *TMPacket:
-		printTMPacket(pt.logger, p, p.Diff(last), delta)
+		printTMPacket(pt.logger, p, p.Diff(pt.history[id]), delta)
 	case *PDPacket:
 		printPDPacket(pt.logger, p, delta)
 	}
@@ -67,7 +67,7 @@ func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
 }
 
 func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %04x || %s | %9d | %6d | %s | %5s || %02x | %s | %9d | %16s | %08x | %08x | %3s || %x | %s"
+	const row = "%9d | %04x || %s | %9d | %6d | %s | %5s || %02x | %s | %9d | %16s | %08x | %08x | %3s || %016x | %s"
 
 	a := p.HRH.Acquisition.Add(delta).Format(TimeFormat)
 	x := p.HRH.Reception.Sub(p.HRH.Acquisition)
@@ -167,7 +167,7 @@ func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
 		} else {
 			rt = "playback"
 		}
-		sum := md5.Sum(p.Payload)
+		sum := xxh.Sum64(p.Payload, 0)
 		bad := "-"
 		if p.Sum != p.Control {
 			bad = Bad
