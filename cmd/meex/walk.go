@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -144,7 +145,8 @@ func Infos(paths []string, d Decoder) <-chan *Info {
 }
 
 func walk(p string, q chan Packet, d Decoder) error {
-	var rt *Reader
+	// var rt *Reader
+	rt := NewReader(nil, d)
 	return filepath.Walk(p, func(p string, i os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -158,14 +160,20 @@ func walk(p string, q chan Packet, d Decoder) error {
 		}
 		defer r.Close()
 
-		if rt == nil {
-			rt = NewReader(r, d)
-		} else {
-			rt.Reset(r)
-		}
-		for p := range rt.Packets() {
+		rt.Reset(r)
+		for {
+			p, err := rt.Next()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
 			q <- p
 		}
+		// for p := range rt.Packets() {
+		// 	q <- p
+		// }
 		return nil
 	})
 }

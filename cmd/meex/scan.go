@@ -1014,7 +1014,8 @@ type Index struct {
 }
 
 type Reader struct {
-	scan    *bufio.Scanner
+	// scan    *bufio.Scanner
+	scan    *bufio.Reader
 	decoder Decoder
 	digest  hash.Hash
 
@@ -1029,8 +1030,20 @@ func NewReader(r io.Reader, d Decoder) *Reader {
 
 func (r *Reader) Reset(rs io.Reader) {
 	r.digest.Reset()
-	r.scan = Scan(io.TeeReader(rs, r.digest))
+
+	if rs != nil {
+		if r.scan == nil {
+			r.scan = bufio.NewReader(rs)
+		} else {
+			r.scan.Reset(rs)
+		}
+	}
 }
+
+// func (r *Reader) Reset(rs io.Reader) {
+// 	r.digest.Reset()
+// 	r.scan = Scan(io.TeeReader(rs, r.digest))
+// }
 
 func (r *Reader) IndexSum() ([]*Index, string) {
 	return r.indexSum()
@@ -1088,18 +1101,34 @@ func (r *Reader) Gaps() <-chan *Gap {
 }
 
 func (r *Reader) Next() (Packet, error) {
-	if !r.scan.Scan() {
-		return nil, io.EOF
+	var size uint32
+	if err := binary.Read(r.scan, binary.LittleEndian, &size); err != nil {
+		return nil, err
 	}
-	bs := r.scan.Bytes()
-	if err := r.scan.Err(); err != nil {
+	xs := make([]byte, int(size)+4)
+	binary.LittleEndian.PutUint32(xs, size)
+	if _, err := io.ReadFull(r.scan, xs[4:]); err != nil {
 		return nil, err
 	}
 	if r.decoder == nil {
 		return nil, ErrSkip
 	}
-	return r.decoder.Decode(bs)
+	return r.decoder.Decode(xs)
 }
+
+// func (r *Reader) Next() (Packet, error) {
+// 	if !r.scan.Scan() {
+// 		return nil, io.EOF
+// 	}
+// 	bs := r.scan.Bytes()
+// 	if err := r.scan.Err(); err != nil {
+// 		return nil, err
+// 	}
+// 	if r.decoder == nil {
+// 		return nil, ErrSkip
+// 	}
+// 	return r.decoder.Decode(bs)
+// }
 
 func (r *Reader) Packets() <-chan Packet {
 	if r.queue == nil {
