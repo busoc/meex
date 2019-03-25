@@ -180,11 +180,11 @@ func (v VMUCommonHeader) Auxiliary() time.Time {
 func decodeHRDL(body []byte, h *HRDLHeader) error {
 	h.Size = binary.LittleEndian.Uint32(body)
 	h.Error = binary.BigEndian.Uint16(body[4:])
-	h.Payload = uint8(body[7])
-	h.Channel = uint8(body[8])
-	h.PacketCoarse = binary.BigEndian.Uint32(body[9:])
-	h.PacketFine = uint8(body[13])
-	h.HRDPCoarse = binary.BigEndian.Uint32(body[14:])
+	h.Payload = uint8(body[6])
+	h.Channel = uint8(body[7])
+	h.PacketCoarse = binary.BigEndian.Uint32(body[8:])
+	h.PacketFine = uint8(body[12])
+	h.HRDPCoarse = binary.BigEndian.Uint32(body[13:])
 	h.HRDPFine = uint8(body[17])
 
 	return nil
