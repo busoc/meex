@@ -15,19 +15,15 @@ import (
 var commands = []*cli.Command{
 	sortCommand,
 	mixCommand,
-	scanCommand,
 	extractCommand,
 	listCommand,
 	takeCommand,
-	sumCommand,
-	indexCommand,
 	dispatchCommand,
 	shuffleCommand,
 	joinCommand,
 	diffCommand,
 	countCommand,
 	errCommand,
-	storeCommand,
 }
 
 const helpText = `{{.Name}} scan the HRDP archive to consolidate the USOC HRDP archive
