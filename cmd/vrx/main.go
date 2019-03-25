@@ -79,15 +79,15 @@ func main() {
 			os.Exit(2)
 		}
 		r.Reset(buffer[:n])
-		if err := dumpPacket(os.Stdout, &r); err != nil {
+		if err := dumpPacket(os.Stdout, buffer[:n]); err != nil {
 			fmt.Fprintln(os.Stderr, "unexpected error:", err)
 			os.Exit(2)
 		}
 	}
 }
 
-func dumpPacket(w io.Writer, r *bytes.Reader) error {
-	if r.Len() < HRDLHeaderLen+VMUHeaderLen+UPILen {
+func dumpPacket(w io.Writer, body []byte) error {
+	if len(body) < HRDLHeaderLen+VMUHeaderLen+UPILen {
 		return nil
 	}
 	var (
@@ -95,20 +95,23 @@ func dumpPacket(w io.Writer, r *bytes.Reader) error {
 		v VMUHeader
 		c VMUCommonHeader
 	)
-	if err := decodeHRDL(r, &h); err != nil {
+	if err := decodeHRDL(body[:HRDLHeaderLen], &h); err != nil {
 		return err
 	}
-	if err := decodeVMU(r, &v); err != nil {
+	if err := decodeVMU(body[HRDLHeaderLen:HRDLHeaderLen+VMUHeaderLen], &v); err != nil {
 		return err
 	}
-	if err := decodeCommon(r, &c); err != nil {
+	if len(body[HRDLHeaderLen+VMUHeaderLen:]) < 76 {
+		return nil
+	}
+	if err := decodeCommon(body[HRDLHeaderLen+VMUHeaderLen:], &c); err != nil {
 		return nil
 	}
 	delta := h.Elapsed()
 	vmutime := v.Timestamp().Format(TimeFormat)
 	acqtime := c.Acquisition().Format(TimeFormat)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
-	_, err := fmt.Fprintf(w, listRow, h.Size+4, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, c.UserInfo(), delta)
+	_, err := fmt.Fprintf(w, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, c.UserInfo(), delta)
 	return err
 }
 
@@ -136,7 +139,6 @@ func (h HRDLHeader) Archive() time.Time {
 }
 
 type VMUHeader struct {
-	Word     uint32
 	Size     uint32
 	Channel  uint8
 	Origin   uint8
@@ -175,55 +177,45 @@ func (v VMUCommonHeader) Auxiliary() time.Time {
 	return timutil.GPS.Add(v.AuxTime)
 }
 
-func decodeHRDL(r io.Reader, h *HRDLHeader) error {
-	binary.Read(r, binary.LittleEndian, &h.Size)
-	binary.Read(r, binary.BigEndian, &h.Error)
-	binary.Read(r, binary.BigEndian, &h.Payload)
-	binary.Read(r, binary.BigEndian, &h.Channel)
-	binary.Read(r, binary.BigEndian, &h.PacketCoarse)
-	binary.Read(r, binary.BigEndian, &h.PacketFine)
-	binary.Read(r, binary.BigEndian, &h.HRDPCoarse)
-	binary.Read(r, binary.BigEndian, &h.HRDPFine)
+func decodeHRDL(body []byte, h *HRDLHeader) error {
+	h.Size = binary.LittleEndian.Uint32(body)
+	h.Error = binary.BigEndian.Uint16(body[4:])
+	h.Payload = uint8(body[7])
+	h.Channel = uint8(body[8])
+	h.PacketCoarse = binary.BigEndian.Uint32(body[9:])
+	h.PacketFine = uint8(body[13])
+	h.HRDPCoarse = binary.BigEndian.Uint32(body[14:])
+	h.HRDPFine = uint8(body[17])
 
 	return nil
 }
 
-func decodeVMU(r io.Reader, v *VMUHeader) error {
-	var spare uint16
-
-	binary.Read(r, binary.LittleEndian, &v.Word)
-	binary.Read(r, binary.LittleEndian, &v.Size)
-	binary.Read(r, binary.LittleEndian, &v.Channel)
-	binary.Read(r, binary.LittleEndian, &v.Origin)
-	binary.Read(r, binary.LittleEndian, &spare)
-	binary.Read(r, binary.LittleEndian, &v.Sequence)
-	binary.Read(r, binary.LittleEndian, &v.Coarse)
-	binary.Read(r, binary.LittleEndian, &v.Fine)
-	binary.Read(r, binary.LittleEndian, &spare)
+func decodeVMU(body []byte, v *VMUHeader) error {
+	v.Size = binary.LittleEndian.Uint32(body[4:])
+	v.Channel = uint8(body[8])
+	v.Origin = uint8(body[9])
+	v.Sequence = binary.LittleEndian.Uint32(body[12:])
+	v.Coarse = binary.LittleEndian.Uint32(body[16:])
+	v.Fine = binary.LittleEndian.Uint16(body[20:])
 
 	return nil
 }
 
-func decodeCommon(r io.Reader, v *VMUCommonHeader) error {
-	binary.Read(r, binary.LittleEndian, &v.Property)
-	binary.Read(r, binary.LittleEndian, &v.Stream)
-	binary.Read(r, binary.LittleEndian, &v.Counter)
-	binary.Read(r, binary.LittleEndian, &v.AcqTime)
-	binary.Read(r, binary.LittleEndian, &v.AuxTime)
-	binary.Read(r, binary.LittleEndian, &v.Origin)
+func decodeCommon(body []byte, v *VMUCommonHeader) error {
+	v.Property = body[0]
+	v.Stream = binary.LittleEndian.Uint16(body[1:])
+	v.Counter = binary.LittleEndian.Uint32(body[3:])
+	v.AcqTime = time.Duration(binary.LittleEndian.Uint64(body[7:]))
+	v.AuxTime = time.Duration(binary.LittleEndian.Uint64(body[15:]))
+	v.Origin = body[23]
 
-	var err error
 	switch v.Property >> 4 {
 	case 1: // science
-		_, err = io.ReadFull(r, v.UPI[:])
+		copy(v.UPI[:], body[24:])
 	case 2: // image
-		bs := make([]byte, 52)
-		_, err = io.ReadFull(r, bs)
-		if err == nil {
-			copy(v.UPI[:], bs[20:])
-		}
+		copy(v.UPI[:], body[44:])
 	}
-	return err
+	return nil
 }
 
 func whichChannel(c uint8) string {
