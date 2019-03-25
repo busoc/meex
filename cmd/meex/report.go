@@ -47,7 +47,6 @@ func runList(cmd *cli.Command, args []string) error {
 	id := cmd.Flag.Int("i", 0, "")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
 	erronly := cmd.Flag.Bool("e", false, "include invalid packets")
-	mem := cmd.Flag.String("m", "", "dump memory profile")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -76,17 +75,6 @@ func runList(cmd *cli.Command, args []string) error {
 		}
 	}
 	log.Printf("%d packets found %s (%dMB)", total, time.Since(n), size>>20)
-	if *mem != "" {
-		w, err := os.Create(*mem)
-		if err != nil {
-			return err
-		}
-		runtime.GC()
-		if err := pprof.WriteHeapProfile(w); err != nil {
-			return err
-		}
-		w.Close()
-	}
 	return nil
 }
 
