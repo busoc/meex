@@ -52,7 +52,7 @@ func walk(files []string, recurse bool) chan string {
 	q := make(chan string)
 	go func() {
 		defer close(q)
-		for i := range files {
+		for i := 0; i < len(files); i++ {
 			filepath.Walk(files[i], func(p string, i os.FileInfo, err error) error {
 				if err != nil {
 					return err
