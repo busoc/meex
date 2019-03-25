@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/busoc/timutil"
 	"github.com/midbel/cli"
 	"golang.org/x/sync/errgroup"
 )
@@ -38,7 +39,7 @@ func runDispatch(cmd *cli.Command, args []string) error {
 	}
 
 	ws := make(map[time.Time]io.WriteCloser)
-	delta := GPS.Sub(UNIX)
+	delta := timutil.DeltaGPS()
 	for p := range Walk(cmd.Flag.Args(), kind.Decod) {
 		t := p.Timestamp().Add(delta).Truncate(Five)
 		w, ok := ws[t]

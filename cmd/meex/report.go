@@ -7,6 +7,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/busoc/timutil"
 	"github.com/midbel/cli"
 )
 
@@ -59,7 +60,7 @@ func runList(cmd *cli.Command, args []string) error {
 	}
 	var delta time.Duration
 	if *toGPS {
-		delta = UNIX.Sub(GPS)
+		delta = -timutil.DeltaGPS()
 	}
 	queue := Walk(cmd.Flag.Args(), DecodeById(*id, kind.Decod))
 	var size, total uint64
@@ -98,8 +99,8 @@ func runDiff(cmd *cli.Command, args []string) error {
 		return err
 	}
 	var delta time.Duration
-	if !*toGPS {
-		delta = GPS.Sub(UNIX)
+	if *toGPS {
+		delta = -timutil.DeltaGPS() //GPS.Sub(UNIX)
 	}
 	const row = "%20s | %s | %s | %6d | %6d | %8d | %s"
 
@@ -171,8 +172,8 @@ func runCount(cmd *cli.Command, args []string) error {
 	}
 
 	var delta time.Duration
-	if !*toGPS {
-		delta = GPS.Sub(UNIX)
+	if *toGPS {
+		delta = -timutil.DeltaGPS() //GPS.Sub(UNIX)
 	}
 
 	var z Coze

@@ -21,8 +21,6 @@ import (
 
 var ErrShortBuffer = errors.New("need more bytes")
 
-const Leap = 18 * time.Second
-
 const MaxBufferSize = 8 << 20
 
 const (
@@ -32,11 +30,6 @@ const (
 	CCSDSHeaderLen = 6
 	ESAHeaderLen   = 10
 	UMIHeaderLen   = 25
-)
-
-var (
-	UNIX = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	GPS  = time.Date(1980, 1, 6, 0, 0, 0, 0, time.UTC)
 )
 
 type byId struct {
@@ -655,11 +648,11 @@ func (v *VMUCommonHeader) Less(o Packet) bool {
 }
 
 func (v *VMUCommonHeader) Acquisition() time.Time {
-	return GPS.Add(v.AcqTime)
+	return timutil.GPS.Add(v.AcqTime)
 }
 
 func (v *VMUCommonHeader) Auxiliary() time.Time {
-	return GPS.Add(v.AcqTime)
+	return timutil.GPS.Add(v.AcqTime)
 }
 
 func (v *VMUCommonHeader) String() string {
