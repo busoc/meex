@@ -18,13 +18,31 @@ import (
 	"github.com/midbel/xxh"
 )
 
+type shortError struct {
+	Want, Got int
+}
+
+func (e shortError) Error() string {
+	if e.Want == 0 {
+		return fmt.Sprintf("short buffer: not enough bytes available to read headers (%d)", e.Got)
+	}
+	return fmt.Sprintf("short buffer: got %d bytes, want %d bytes", e.Got, e.Want)
+}
+
+func isShortError(err error) bool {
+	_, ok := err.(shortError)
+	return ok
+}
+
+func NotEnoughByte(want, got int) error {
+	return shortError{want, got}
+}
+
 const (
 	UPILen        = 32
 	HRDLHeaderLen = 18
 	VMUHeaderLen  = 24
 )
-
-const invalid = "invalid"
 
 const (
 	modeRT = "rt"
@@ -37,18 +55,31 @@ const (
 	chanLRSD = "sc"
 )
 
-const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
+const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %7d | %16s | %08x | %8s || %08x\n"
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
 var (
-	unknown    = []byte("***")
-	timeBuffer = make([]byte, 64)
+	unknown = []byte("***")
+	invalid = []byte("invalid")
 )
 
 func main() {
 	mem := flag.String("m", "", "memory profile")
+	cpu := flag.String("c", "", "cpu profile")
 	flag.Parse()
+
+	if *cpu != "" {
+		w, err := os.Create(*cpu)
+		if err != nil {
+			os.Exit(77)
+		}
+		defer w.Close()
+		if err := pprof.StartCPUProfile(w); err != nil {
+			os.Exit(78)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if *mem != "" {
 		defer func() {
@@ -72,7 +103,6 @@ func main() {
 
 	digest := xxh.New64(0)
 	rt := io.TeeReader(meex.NewReader(mr), digest)
-	// rt := meex.NewReader(mr)
 
 	buffer := make([]byte, meex.MaxBufferSize)
 	for {
@@ -84,16 +114,20 @@ func main() {
 			fmt.Fprintln(os.Stderr, "unexpected error reading rt:", err)
 			os.Exit(2)
 		}
-		if err := dumpPacket(buffer[:n], digest.Sum64()); err != nil {
-			fmt.Fprintln(os.Stderr, "unexpected error:", err)
+		err = dumpPacket(buffer[:n], digest.Sum64())
+		switch {
+		case err == nil:
+		case isShortError(err):
+		default:
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
 	}
 }
 
 func dumpPacket(body []byte, digest uint64) error {
-	if len(body) < HRDLHeaderLen+VMUHeaderLen+UPILen {
-		return nil
+	if len(body) < HRDLHeaderLen+VMUHeaderLen {
+		return NotEnoughByte(0, len(body))
 	}
 	var (
 		h HRDLHeader
@@ -106,20 +140,46 @@ func dumpPacket(body []byte, digest uint64) error {
 	if err := decodeVMU(body[HRDLHeaderLen:HRDLHeaderLen+VMUHeaderLen], &v); err != nil {
 		return err
 	}
+	if size := len(body) - HRDLHeaderLen - 12; int(v.Size) > size {
+		return NotEnoughByte(int(v.Size)+12, size+12)
+	}
+
 	if len(body[HRDLHeaderLen+VMUHeaderLen:]) < 76 {
 		return nil
 	}
 	if err := decodeCommon(body[HRDLHeaderLen+VMUHeaderLen:], &c); err != nil {
-		return nil
+		return err
 	}
 
 	sum, bad := calculateSum(body[HRDLHeaderLen+8 : HRDLHeaderLen+8+int(v.Size)+4])
 
-	vmutime, acqtime := v.Timestamp().AppendFormat(timeBuffer, TimeFormat), c.Acquisition().AppendFormat(timeBuffer, TimeFormat)
+	vmutime := v.Timestamp().AppendFormat(timeBuffer, TimeFormat)
+	// acqtime := c.Acquisition().AppendFormat(timeBuffer, TimeFormat)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
-	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, c.UserInfo(), sum, bad, digest)
+	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, c.Counter, userInfo(c.UPI), sum, bad, digest)
 	return nil
+}
+
+var (
+	upiBuffer  = make([]byte, UPILen)
+	timeBuffer = make([]byte, 2*UPILen)
+)
+
+func userInfo(upi [UPILen]byte) []byte {
+	var n int
+	for i := 0; i < UPILen; i++ {
+		keep, done := shouldKeepRune(rune(upi[i]))
+		if done {
+			break
+		}
+		if !keep {
+			continue
+		}
+		upiBuffer[n] = upi[i]
+		n++
+	}
+	return upiBuffer[:n]
 }
 
 type HRDLHeader struct {
@@ -245,6 +305,16 @@ func whichMode(vmu, hrd uint8) string {
 	return modePB
 }
 
+func shouldKeepRune(r rune) (bool, bool) {
+	if r == 0 {
+		return false, true
+	}
+	if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+		return true, true
+	}
+	return false, true
+}
+
 func keepRune(r rune) rune {
 	if r == 0 {
 		return -1
@@ -255,15 +325,31 @@ func keepRune(r rune) rune {
 	return '*'
 }
 
-func calculateSum(body []byte) (uint32, string) {
-	var sum uint32
-	for i := 0; i < len(body)-4; i++ {
-		sum += uint32(body[i])
+func calculateSum(body []byte) (uint32, []byte) {
+	var (
+		sum uint32
+		i   int
+	)
+	limit := len(body) - 4
+	// for i := 0; i < limit; i++ {
+	// 	sum += uint32(body[i])
+	// }
+	for i < (limit-8)+1 {
+		v1 := uint32(body[i+0]) + uint32(body[i+1]) + uint32(body[i+2]) + uint32(body[i+3])
+		v2 := uint32(body[i+4]) + uint32(body[i+5]) + uint32(body[i+6]) + uint32(body[i+7])
+		sum += v1 + v2
+		i += 8
 	}
-	expected := binary.LittleEndian.Uint32(body[len(body)-4:])
-	var bad string
+	for i < limit {
+		sum += uint32(body[i])
+		i++
+	}
+	expected := binary.LittleEndian.Uint32(body[limit:])
+	var bad []byte
 	if expected != sum {
 		bad = invalid
+	} else {
+		bad = unknown
 	}
 	return sum, bad
 }
