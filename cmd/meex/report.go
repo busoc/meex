@@ -2,9 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
-	"runtime"
-	"runtime/pprof"
 	"time"
 
 	"github.com/busoc/timutil"

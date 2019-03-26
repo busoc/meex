@@ -15,6 +15,7 @@ import (
 	"github.com/busoc/meex"
 	"github.com/busoc/meex/cmd/internal/multireader"
 	"github.com/busoc/timutil"
+	"github.com/midbel/xxh"
 )
 
 const (
@@ -23,22 +24,27 @@ const (
 	VMUHeaderLen  = 24
 )
 
+const invalid = "invalid"
+
 const (
-	modeRT = "realtime"
-	modePB = "playback"
+	modeRT = "rt"
+	modePB = "pb"
 )
 
 const (
-	chanVic1 = "vic1"
-	chanVic2 = "vic2"
-	chanLRSD = "lrsd"
+	chanVic1 = "v1"
+	chanVic2 = "v2"
+	chanLRSD = "sc"
 )
 
-const listRow = "%9d | %04x || %s | %9d | %s | %5s || %02x | %s | %9d | %16s | %s\n"
+const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
-var unknown = []byte("***")
+var (
+	unknown    = []byte("***")
+	timeBuffer = make([]byte, 64)
+)
 
 func main() {
 	mem := flag.String("m", "", "memory profile")
@@ -64,11 +70,11 @@ func main() {
 	}
 	defer mr.Close()
 
-	rt := meex.NewReader(mr)
+	digest := xxh.New64(0)
+	rt := io.TeeReader(meex.NewReader(mr), digest)
+	// rt := meex.NewReader(mr)
 
 	buffer := make([]byte, meex.MaxBufferSize)
-
-	var r bytes.Reader
 	for {
 		n, err := rt.Read(buffer)
 		if err != nil {
@@ -78,15 +84,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, "unexpected error reading rt:", err)
 			os.Exit(2)
 		}
-		r.Reset(buffer[:n])
-		if err := dumpPacket(os.Stdout, buffer[:n]); err != nil {
+		if err := dumpPacket(buffer[:n], digest.Sum64()); err != nil {
 			fmt.Fprintln(os.Stderr, "unexpected error:", err)
 			os.Exit(2)
 		}
 	}
 }
 
-func dumpPacket(w io.Writer, body []byte) error {
+func dumpPacket(body []byte, digest uint64) error {
 	if len(body) < HRDLHeaderLen+VMUHeaderLen+UPILen {
 		return nil
 	}
@@ -107,12 +112,14 @@ func dumpPacket(w io.Writer, body []byte) error {
 	if err := decodeCommon(body[HRDLHeaderLen+VMUHeaderLen:], &c); err != nil {
 		return nil
 	}
-	delta := h.Elapsed()
-	vmutime := v.Timestamp().Format(TimeFormat)
-	acqtime := c.Acquisition().Format(TimeFormat)
+
+	sum, bad := calculateSum(body[HRDLHeaderLen+8 : HRDLHeaderLen+8+int(v.Size)+4])
+
+	vmutime, acqtime := v.Timestamp().AppendFormat(timeBuffer, TimeFormat), c.Acquisition().AppendFormat(timeBuffer, TimeFormat)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
-	_, err := fmt.Fprintf(w, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, c.UserInfo(), delta)
-	return err
+
+	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, c.UserInfo(), sum, bad, digest)
+	return nil
 }
 
 type HRDLHeader struct {
@@ -246,4 +253,17 @@ func keepRune(r rune) rune {
 		return r
 	}
 	return '*'
+}
+
+func calculateSum(body []byte) (uint32, string) {
+	var sum uint32
+	for i := 0; i < len(body)-4; i++ {
+		sum += uint32(body[i])
+	}
+	expected := binary.LittleEndian.Uint32(body[len(body)-4:])
+	var bad string
+	if expected != sum {
+		bad = invalid
+	}
+	return sum, bad
 }

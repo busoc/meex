@@ -40,5 +40,9 @@ func (r *Reader) Read(xs []byte) (int, error) {
 		return 0, io.ErrShortBuffer
 	}
 	binary.LittleEndian.PutUint32(xs, size)
-	return io.ReadFull(r.inner, xs[4:offset])
+	n, err := io.ReadFull(r.inner, xs[4:offset])
+	if err == nil {
+		n += 4
+	}
+	return n, err
 }
