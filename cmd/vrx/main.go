@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"time"
 	"unicode"
 
@@ -55,7 +56,7 @@ const (
 	chanLRSD = "sc"
 )
 
-const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %7d | %16s | %08x | %8s || %08x\n"
+const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
@@ -151,20 +152,67 @@ func dumpPacket(body []byte, digest uint64) error {
 		return err
 	}
 
-	sum, bad := calculateSum(body[HRDLHeaderLen+8 : HRDLHeaderLen+8+int(v.Size)+4])
+	sum, bad := calculateSum(body[HRDLHeaderLen+8:HRDLHeaderLen+8+int(v.Size)+4])
 
-	vmutime := v.Timestamp().AppendFormat(timeBuffer, TimeFormat)
-	// acqtime := c.Acquisition().AppendFormat(timeBuffer, TimeFormat)
+	// vmutime := v.Timestamp().AppendFormat(vmuTimeBuffer, TimeFormat)
+	// acqtime := c.Acquisition().AppendFormat(acqTimeBuffer, TimeFormat)
+	vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
+	acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
-	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, c.Counter, userInfo(c.UPI), sum, bad, digest)
+	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, userInfo(c.UPI), sum, bad, digest)
 	return nil
 }
 
 var (
-	upiBuffer  = make([]byte, UPILen)
-	timeBuffer = make([]byte, 2*UPILen)
+	upiBuffer = make([]byte, UPILen)
+	vmuTimeBuffer = make([]byte, 0, UPILen)
+	acqTimeBuffer = make([]byte, 0, UPILen)
 )
+
+const millis = 1000*1000
+
+func timeFormat(t time.Time, buf []byte) []byte {
+	y, m, d := t.Date()
+	buf = strconv.AppendInt(buf, int64(y), 10)
+	buf = append(buf, '-')
+	if m < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(m), 10)
+	buf = append(buf, '-')
+	if d < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(d), 10)
+	buf = append(buf, ' ')
+	if t.Hour() < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(t.Hour()), 10)
+	buf = append(buf, ':')
+	if t.Minute() < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(t.Minute()), 10)
+	buf = append(buf, ':')
+	if t.Second() < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(t.Second()), 10)
+
+	buf = append(buf, '.')
+	ms := t.Nanosecond()/millis
+	if ms < 10 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	if ms < 100 {
+		buf = strconv.AppendInt(buf, 0, 10)
+	}
+	buf = strconv.AppendInt(buf, int64(ms), 10)
+
+	return buf
+}
 
 func userInfo(upi [UPILen]byte) []byte {
 	var n int
@@ -330,14 +378,14 @@ func calculateSum(body []byte) (uint32, []byte) {
 		sum uint32
 		i   int
 	)
-	limit := len(body) - 4
+	limit := len(body)-4
 	// for i := 0; i < limit; i++ {
 	// 	sum += uint32(body[i])
 	// }
 	for i < (limit-8)+1 {
 		v1 := uint32(body[i+0]) + uint32(body[i+1]) + uint32(body[i+2]) + uint32(body[i+3])
 		v2 := uint32(body[i+4]) + uint32(body[i+5]) + uint32(body[i+6]) + uint32(body[i+7])
-		sum += v1 + v2
+		sum += v1+v2
 		i += 8
 	}
 	for i < limit {
