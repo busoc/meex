@@ -141,15 +141,15 @@ func dumpPacket(body []byte, digest uint64) (int, error) {
 		return 0, NotEnoughByte(0, len(body))
 	}
 	var (
-		h HRDLHeader
-		v VMUHeader
-		c VMUCommonHeader
+		h   HRDLHeader
+		v   VMUHeader
+		c   VMUCommonHeader
 		err error
 	)
 	if h, err = decodeHRDL(body[:HRDLHeaderLen]); err != nil {
 		return 0, err
 	}
-	if v, err = decodeVMU(body[HRDLHeaderLen:HRDLHeaderLen+VMUHeaderLen]); err != nil {
+	if v, err = decodeVMU(body[HRDLHeaderLen : HRDLHeaderLen+VMUHeaderLen]); err != nil {
 		return 0, err
 	}
 	if size := len(body) - HRDLHeaderLen - 12; int(v.Size) > size {
@@ -159,13 +159,44 @@ func dumpPacket(body []byte, digest uint64) (int, error) {
 		return 0, err
 	}
 
-	sum, bad := calculateSum(body[HRDLHeaderLen+8:HRDLHeaderLen+8+int(v.Size)+4])
+	sum, bad := calculateSum(body[HRDLHeaderLen+8 : HRDLHeaderLen+8+int(v.Size)+4])
 
 	vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
 	acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
 	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, userInfo(c.UPI), sum, bad, digest)
+
+	// resetLine()
+	// formatUint(uint(v.Size), ' ', line[:8], 10)
+	// line[9] = '|'
+	// formatUint(uint(h.Error), '0', line[11:15], 16)
+	// line[17] = '|'
+	// line[18] = '|'
+	// copy(line[20:43], vmutime)
+	// line[44] = '|'
+	// formatUint(uint(v.Sequence), ' ', line[46:55], 10)
+	// line[56] = '|'
+	// copy(line[58:], mode)
+	// line[61] = '|'
+	// copy(line[63:], channel)
+	// line[66] = '|'
+	// formatUint(uint(c.Origin), '0', line[68:70], 16)
+	// line[71] = '|'
+	// copy(line[73:96], acqtime)
+	// line[97] = '|'
+	// formatUint(uint(c.Counter), ' ', line[99:107], 10)
+	// line[108] = '|'
+	// copy(line[110:122], userInfo(c.UPI))
+	// line[124] = '|'
+	// formatUint(uint(sum), '0', line[126:134], 16)
+	// line[135] = '|'
+	// copy(line[137:146], bad)
+	// line[147] = '|'
+	// line[148] = '|'
+	// formatUint(uint(digest), '0', line[150:166], 16)
+	// line[167] = '\n'
+	// os.Stdout.Write(line[:168])
 
 	if bytes.Equal(bad, invalid) {
 		err = ErrInvalid
@@ -174,12 +205,12 @@ func dumpPacket(body []byte, digest uint64) (int, error) {
 }
 
 var (
-	tmp = make([]byte, 0, 64)
-	line = make([]byte, 1024)
+	tmp  = make([]byte, 0, 64)
+	line = make([]byte, 256)
 )
 
 func resetLine() {
-	for i := 0; i < 1024; i++ {
+	for i := 0; i < len(line); i++ {
 		line[i] = ' '
 	}
 }
@@ -195,12 +226,12 @@ func formatUint(v uint, pad byte, buf []byte, base int) {
 }
 
 var (
-	upiBuffer = make([]byte, UPILen)
+	upiBuffer     = make([]byte, UPILen)
 	vmuTimeBuffer = make([]byte, 0, UPILen)
 	acqTimeBuffer = make([]byte, 0, UPILen)
 )
 
-const millis = 1000*1000
+const millis = 1000 * 1000
 
 func timeFormat(t time.Time, buf []byte) []byte {
 	y, m, d := t.Date()
@@ -232,7 +263,7 @@ func timeFormat(t time.Time, buf []byte) []byte {
 	buf = strconv.AppendInt(buf, int64(t.Second()), 10)
 
 	buf = append(buf, '.')
-	ms := t.Nanosecond()/millis
+	ms := t.Nanosecond() / millis
 	if ms < 10 {
 		buf = strconv.AppendInt(buf, 0, 10)
 	}
@@ -416,7 +447,7 @@ func calculateSum(body []byte) (uint32, []byte) {
 		sum uint32
 		i   int
 	)
-	limit := len(body)-4
+	limit := len(body) - 4
 	for i < (limit-blockSize)+1 {
 		sum += uint32(body[i]) + uint32(body[i+1]) + uint32(body[i+2]) + uint32(body[i+3])
 		sum += uint32(body[i+4]) + uint32(body[i+5]) + uint32(body[i+6]) + uint32(body[i+7])
