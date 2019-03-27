@@ -9,7 +9,8 @@ import (
 const MaxBufferSize = 8 << 20
 
 type Reader struct {
-	inner *bufio.Reader
+	inner  *bufio.Reader
+	needed uint32
 }
 
 func NewReader(r io.Reader) *Reader {
@@ -27,19 +28,20 @@ func (r *Reader) Reset(rs io.Reader) {
 	} else {
 		r.inner.Reset(rs)
 	}
+	r.needed = 0
 }
 
 func (r *Reader) Read(xs []byte) (int, error) {
-	var size uint32
-	if err := binary.Read(r.inner, binary.LittleEndian, &size); err != nil {
+	if err := binary.Read(r.inner, binary.LittleEndian, &r.needed); err != nil {
 		return 0, err
 	}
-	offset := int(size) + 4
+	offset := int(r.needed) + 4
 
 	if len(xs) < offset {
+		// return 0, fmt.Errorf("short buffer (needs: %d, get: %d)", offset, len(xs))
 		return 0, io.ErrShortBuffer
 	}
-	binary.LittleEndian.PutUint32(xs, size)
+	binary.LittleEndian.PutUint32(xs, r.needed)
 	n, err := io.ReadFull(r.inner, xs[4:offset])
 	if err == nil {
 		n += 4

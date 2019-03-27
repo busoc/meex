@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ import (
 	"github.com/busoc/timutil"
 	"github.com/midbel/xxh"
 )
+
+var ErrInvalid = errors.New("invalid")
 
 type shortError struct {
 	Want, Got int
@@ -106,6 +109,8 @@ func main() {
 	rt := io.TeeReader(meex.NewReader(mr), digest)
 
 	buffer := make([]byte, meex.MaxBufferSize)
+
+	var total, size, invalid int64
 	for {
 		n, err := rt.Read(buffer)
 		if err != nil {
@@ -115,53 +120,78 @@ func main() {
 			fmt.Fprintln(os.Stderr, "unexpected error reading rt:", err)
 			os.Exit(2)
 		}
-		err = dumpPacket(buffer[:n], digest.Sum64())
+		z, err := dumpPacket(buffer[:n], digest.Sum64())
+		total++
+		size += int64(z)
 		switch {
 		case err == nil:
-		case isShortError(err):
+		case isShortError(err) || err == ErrInvalid:
+			invalid++
 		default:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
 	}
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintf(os.Stdout, "%d packets (%dMB, %d invalid)\n", total, size>>20, invalid)
 }
 
-func dumpPacket(body []byte, digest uint64) error {
+func dumpPacket(body []byte, digest uint64) (int, error) {
 	if len(body) < HRDLHeaderLen+VMUHeaderLen {
-		return NotEnoughByte(0, len(body))
+		return 0, NotEnoughByte(0, len(body))
 	}
 	var (
 		h HRDLHeader
 		v VMUHeader
 		c VMUCommonHeader
+		err error
 	)
-	if err := decodeHRDL(body[:HRDLHeaderLen], &h); err != nil {
-		return err
+	if h, err = decodeHRDL(body[:HRDLHeaderLen]); err != nil {
+		return 0, err
 	}
-	if err := decodeVMU(body[HRDLHeaderLen:HRDLHeaderLen+VMUHeaderLen], &v); err != nil {
-		return err
+	if v, err = decodeVMU(body[HRDLHeaderLen:HRDLHeaderLen+VMUHeaderLen]); err != nil {
+		return 0, err
 	}
 	if size := len(body) - HRDLHeaderLen - 12; int(v.Size) > size {
-		return NotEnoughByte(int(v.Size)+12, size+12)
+		return 0, NotEnoughByte(int(v.Size)+12, size+12)
 	}
-
-	if len(body[HRDLHeaderLen+VMUHeaderLen:]) < 76 {
-		return nil
-	}
-	if err := decodeCommon(body[HRDLHeaderLen+VMUHeaderLen:], &c); err != nil {
-		return err
+	if c, err = decodeCommon(body[HRDLHeaderLen+VMUHeaderLen:]); err != nil {
+		return 0, err
 	}
 
 	sum, bad := calculateSum(body[HRDLHeaderLen+8:HRDLHeaderLen+8+int(v.Size)+4])
 
-	// vmutime := v.Timestamp().AppendFormat(vmuTimeBuffer, TimeFormat)
-	// acqtime := c.Acquisition().AppendFormat(acqTimeBuffer, TimeFormat)
 	vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
 	acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
 	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, userInfo(c.UPI), sum, bad, digest)
-	return nil
+
+	if bytes.Equal(bad, invalid) {
+		err = ErrInvalid
+	}
+	return int(v.Size), err
+}
+
+var (
+	tmp = make([]byte, 0, 64)
+	line = make([]byte, 1024)
+)
+
+func resetLine() {
+	for i := 0; i < 1024; i++ {
+		line[i] = ' '
+	}
+}
+
+func formatUint(v uint, pad byte, buf []byte, base int) {
+	for i := 0; i < len(buf); i++ {
+		buf[i] = pad
+	}
+	tmp = strconv.AppendUint(tmp, uint64(v), base)
+	copy(buf[len(buf)-len(tmp):], tmp)
+
+	tmp = tmp[:0]
 }
 
 var (
@@ -292,7 +322,9 @@ func (v VMUCommonHeader) Auxiliary() time.Time {
 	return timutil.GPS.Add(v.AuxTime)
 }
 
-func decodeHRDL(body []byte, h *HRDLHeader) error {
+func decodeHRDL(body []byte) (HRDLHeader, error) {
+	var h HRDLHeader
+
 	h.Size = binary.LittleEndian.Uint32(body)
 	h.Error = binary.BigEndian.Uint16(body[4:])
 	h.Payload = uint8(body[6])
@@ -302,10 +334,12 @@ func decodeHRDL(body []byte, h *HRDLHeader) error {
 	h.HRDPCoarse = binary.BigEndian.Uint32(body[13:])
 	h.HRDPFine = uint8(body[17])
 
-	return nil
+	return h, nil
 }
 
-func decodeVMU(body []byte, v *VMUHeader) error {
+func decodeVMU(body []byte) (VMUHeader, error) {
+	var v VMUHeader
+
 	v.Size = binary.LittleEndian.Uint32(body[4:])
 	v.Channel = uint8(body[8])
 	v.Origin = uint8(body[9])
@@ -313,10 +347,12 @@ func decodeVMU(body []byte, v *VMUHeader) error {
 	v.Coarse = binary.LittleEndian.Uint32(body[16:])
 	v.Fine = binary.LittleEndian.Uint16(body[20:])
 
-	return nil
+	return v, nil
 }
 
-func decodeCommon(body []byte, v *VMUCommonHeader) error {
+func decodeCommon(body []byte) (VMUCommonHeader, error) {
+	var v VMUCommonHeader
+
 	v.Property = body[0]
 	v.Stream = binary.LittleEndian.Uint16(body[1:])
 	v.Counter = binary.LittleEndian.Uint32(body[3:])
@@ -330,7 +366,7 @@ func decodeCommon(body []byte, v *VMUCommonHeader) error {
 	case 2: // image
 		copy(v.UPI[:], body[44:])
 	}
-	return nil
+	return v, nil
 }
 
 func whichChannel(c uint8) string {
@@ -358,7 +394,7 @@ func shouldKeepRune(r rune) (bool, bool) {
 		return false, true
 	}
 	if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
-		return true, true
+		return true, false
 	}
 	return false, true
 }
@@ -373,20 +409,21 @@ func keepRune(r rune) rune {
 	return '*'
 }
 
+const blockSize = 16
+
 func calculateSum(body []byte) (uint32, []byte) {
 	var (
 		sum uint32
 		i   int
 	)
 	limit := len(body)-4
-	// for i := 0; i < limit; i++ {
-	// 	sum += uint32(body[i])
-	// }
-	for i < (limit-8)+1 {
-		v1 := uint32(body[i+0]) + uint32(body[i+1]) + uint32(body[i+2]) + uint32(body[i+3])
-		v2 := uint32(body[i+4]) + uint32(body[i+5]) + uint32(body[i+6]) + uint32(body[i+7])
-		sum += v1+v2
-		i += 8
+	for i < (limit-blockSize)+1 {
+		sum += uint32(body[i]) + uint32(body[i+1]) + uint32(body[i+2]) + uint32(body[i+3])
+		sum += uint32(body[i+4]) + uint32(body[i+5]) + uint32(body[i+6]) + uint32(body[i+7])
+		sum += uint32(body[i+8]) + uint32(body[i+9]) + uint32(body[i+10]) + uint32(body[i+11])
+		sum += uint32(body[i+12]) + uint32(body[i+13]) + uint32(body[i+14]) + uint32(body[i+15])
+
+		i += blockSize
 	}
 	for i < limit {
 		sum += uint32(body[i])

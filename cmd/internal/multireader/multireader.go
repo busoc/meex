@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 )
 
+const datfile = ".dat"
+
 type reader struct {
 	curr  *os.File
 	files chan string
@@ -64,7 +66,9 @@ func walk(files []string, recurse bool) chan string {
 						return nil
 					}
 				}
-				q <- p
+				if e := filepath.Ext(p); e == datfile {
+					q <- p
+				}
 				return nil
 			})
 		}
