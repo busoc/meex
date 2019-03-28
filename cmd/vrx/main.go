@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"runtime/pprof"
 	"strconv"
 	"time"
@@ -105,7 +104,6 @@ func main() {
 	rt := io.TeeReader(meex.NewReader(mr), digest)
 
 	buffer := make([]byte, meex.MaxBufferSize)
-
 	var total, size, invalid int64
 	for {
 		n, err := rt.Read(buffer)
@@ -160,8 +158,10 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 		return 0, ErrInvalid
 	}
 
-	vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
-	acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
+	vmutime := make([]byte, 0, 64)
+	acqtime := make([]byte, 0, 64)
+	vmutime = v.Timestamp().AppendFormat(vmutime, time.RFC3339) // timeFormat(v.Timestamp(), vmuTimeBuffer)
+	acqtime = c.Acquisition().AppendFormat(acqtime, time.RFC3339) // timeFormat(c.Acquisition(), acqTimeBuffer)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
 	// writer, pattern, uint32, uint16, []byte; uint32, []byte, []byte, uint8, []byte, uint32, []byte, uint32, []byte, uint64
@@ -172,11 +172,11 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 	return int(v.Size), err
 }
 
-var (
-	upiBuffer     = make([]byte, UPILen)
-	vmuTimeBuffer = make([]byte, 0, UPILen)
-	acqTimeBuffer = make([]byte, 0, UPILen)
-)
+// var (
+// 	upiBuffer     = make([]byte, UPILen)
+// 	vmuTimeBuffer = make([]byte, 0, UPILen)
+// 	acqTimeBuffer = make([]byte, 0, UPILen)
+// )
 
 const millis = 1000 * 1000
 
@@ -224,6 +224,7 @@ func timeFormat(t time.Time, buf []byte) []byte {
 
 func userInfo(upi [UPILen]byte) []byte {
 	var n int
+	buffer := make([]byte, UPILen)
 	for i := 0; i < UPILen; i++ {
 		keep, done := shouldKeepRune(rune(upi[i]))
 		if done {
@@ -232,10 +233,10 @@ func userInfo(upi [UPILen]byte) []byte {
 		if !keep {
 			continue
 		}
-		upiBuffer[n] = upi[i]
+		buffer[n] = upi[i]
 		n++
 	}
-	return upiBuffer[:n]
+	return buffer[:n]
 }
 
 type HRDLHeader struct {
