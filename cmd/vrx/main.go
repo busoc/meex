@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"strconv"
 	"time"
@@ -48,31 +49,30 @@ const (
 	VMUHeaderLen  = 24
 )
 
-const (
-	modeRT = "rt"
-	modePB = "pb"
-)
-
-const (
-	chanVic1 = "v1"
-	chanVic2 = "v2"
-	chanLRSD = "sc"
-)
-
-const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
-
-const TimeFormat = "2006-01-02 15:04:05.000"
-
 var (
+	modeRT = []byte("realtime")
+	modePB = []byte("playback")
+
+	chanVic1 = []byte("vic1")
+	chanVic2 = []byte("vic2")
+	chanLRSD = []byte("lrsd")
+
 	unknown = []byte("***")
 	invalid = []byte("invalid")
 )
 
+const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
+
 func main() {
 	mem := flag.String("m", "", "memory profile")
 	cpu := flag.String("c", "", "cpu profile")
+	gc := flag.Int("g", 0, "gc percent")
+	withError := flag.Bool("e", false, "include invalid packets")
 	flag.Parse()
 
+	if *gc > 0 {
+		debug.SetGCPercent(*gc)
+	}
 	if *cpu != "" {
 		w, err := os.Create(*cpu)
 		if err != nil {
@@ -120,7 +120,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "unexpected error reading rt:", err)
 			os.Exit(2)
 		}
-		z, err := dumpPacket(buffer[:n], digest.Sum64())
+		z, err := dumpPacket(buffer[:n], digest.Sum64(), *withError)
 		total++
 		size += int64(z)
 		switch {
@@ -136,7 +136,7 @@ func main() {
 	fmt.Fprintf(os.Stdout, "%d packets (%dMB, %d invalid)\n", total, size>>20, invalid)
 }
 
-func dumpPacket(body []byte, digest uint64) (int, error) {
+func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 	if len(body) < HRDLHeaderLen+VMUHeaderLen {
 		return 0, NotEnoughByte(0, len(body))
 	}
@@ -160,69 +160,20 @@ func dumpPacket(body []byte, digest uint64) (int, error) {
 	}
 
 	sum, bad := calculateSum(body[HRDLHeaderLen+8 : HRDLHeaderLen+8+int(v.Size)+4])
+	if bytes.Equal(bad, invalid) && !withErr {
+		return 0, ErrInvalid
+	}
 
 	vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
 	acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
 	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
 
+	// writer, pattern, uint32, uint16, []byte; uint32, []byte, []byte, uint8, []byte, uint32, []byte, uint32, []byte, uint64
 	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, userInfo(c.UPI), sum, bad, digest)
-
-	// resetLine()
-	// formatUint(uint(v.Size), ' ', line[:8], 10)
-	// line[9] = '|'
-	// formatUint(uint(h.Error), '0', line[11:15], 16)
-	// line[17] = '|'
-	// line[18] = '|'
-	// copy(line[20:43], vmutime)
-	// line[44] = '|'
-	// formatUint(uint(v.Sequence), ' ', line[46:55], 10)
-	// line[56] = '|'
-	// copy(line[58:], mode)
-	// line[61] = '|'
-	// copy(line[63:], channel)
-	// line[66] = '|'
-	// formatUint(uint(c.Origin), '0', line[68:70], 16)
-	// line[71] = '|'
-	// copy(line[73:96], acqtime)
-	// line[97] = '|'
-	// formatUint(uint(c.Counter), ' ', line[99:107], 10)
-	// line[108] = '|'
-	// copy(line[110:122], userInfo(c.UPI))
-	// line[124] = '|'
-	// formatUint(uint(sum), '0', line[126:134], 16)
-	// line[135] = '|'
-	// copy(line[137:146], bad)
-	// line[147] = '|'
-	// line[148] = '|'
-	// formatUint(uint(digest), '0', line[150:166], 16)
-	// line[167] = '\n'
-	// os.Stdout.Write(line[:168])
-
 	if bytes.Equal(bad, invalid) {
 		err = ErrInvalid
 	}
 	return int(v.Size), err
-}
-
-var (
-	tmp  = make([]byte, 0, 64)
-	line = make([]byte, 256)
-)
-
-func resetLine() {
-	for i := 0; i < len(line); i++ {
-		line[i] = ' '
-	}
-}
-
-func formatUint(v uint, pad byte, buf []byte, base int) {
-	for i := 0; i < len(buf); i++ {
-		buf[i] = pad
-	}
-	tmp = strconv.AppendUint(tmp, uint64(v), base)
-	copy(buf[len(buf)-len(tmp):], tmp)
-
-	tmp = tmp[:0]
 }
 
 var (
@@ -246,7 +197,7 @@ func timeFormat(t time.Time, buf []byte) []byte {
 		buf = strconv.AppendInt(buf, 0, 10)
 	}
 	buf = strconv.AppendInt(buf, int64(d), 10)
-	buf = append(buf, ' ')
+	buf = append(buf, space)
 	if t.Hour() < 10 {
 		buf = strconv.AppendInt(buf, 0, 10)
 	}
@@ -337,14 +288,6 @@ type VMUCommonHeader struct {
 	UPI      [UPILen]byte
 }
 
-func (v VMUCommonHeader) UserInfo() []byte {
-	ns := bytes.Map(keepRune, v.UPI[:])
-	if len(ns) == 0 {
-		return unknown
-	}
-	return ns
-}
-
 func (v VMUCommonHeader) Acquisition() time.Time {
 	return timutil.GPS.Add(v.AcqTime)
 }
@@ -400,7 +343,7 @@ func decodeCommon(body []byte) (VMUCommonHeader, error) {
 	return v, nil
 }
 
-func whichChannel(c uint8) string {
+func whichChannel(c uint8) []byte {
 	switch c {
 	case 1:
 		return chanVic1
@@ -409,11 +352,11 @@ func whichChannel(c uint8) string {
 	case 3:
 		return chanLRSD
 	default:
-		return "****"
+		return unknown
 	}
 }
 
-func whichMode(vmu, hrd uint8) string {
+func whichMode(vmu, hrd uint8) []byte {
 	if vmu == hrd {
 		return modeRT
 	}
