@@ -32,19 +32,23 @@ func (r *Reader) Reset(rs io.Reader) {
 }
 
 func (r *Reader) Read(xs []byte) (int, error) {
-	if err := binary.Read(r.inner, binary.LittleEndian, &r.needed); err != nil {
+	tmp, err := r.inner.Peek(4)
+	if err != nil {
 		return 0, err
 	}
+	r.needed = binary.LittleEndian.Uint32(tmp)
+	// if err := binary.Read(r.inner, binary.LittleEndian, &r.needed); err != nil {
+	// 	return 0, err
+	// }
 	offset := int(r.needed) + 4
 
 	if len(xs) < offset {
-		// return 0, fmt.Errorf("short buffer (needs: %d, get: %d)", offset, len(xs))
 		return 0, io.ErrShortBuffer
 	}
-	binary.LittleEndian.PutUint32(xs, r.needed)
-	n, err := io.ReadFull(r.inner, xs[4:offset])
-	if err == nil {
-		n += 4
-	}
+	// binary.LittleEndian.PutUint32(xs, r.needed)
+	n, err := io.ReadFull(r.inner, xs[:offset])
+	// if err == nil {
+	// 	n += 4
+	// }
 	return n, err
 }
