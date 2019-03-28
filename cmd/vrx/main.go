@@ -50,12 +50,12 @@ const (
 )
 
 var (
-	modeRT = []byte("realtime")
-	modePB = []byte("playback")
+	modeRT = []byte("rt")
+	modePB = []byte("pb")
 
-	chanVic1 = []byte("vic1")
-	chanVic2 = []byte("vic2")
-	chanLRSD = []byte("lrsd")
+	chanVic1 = []byte("v1")
+	chanVic2 = []byte("v2")
+	chanLRSD = []byte("sc")
 
 	unknown = []byte("***")
 	invalid = []byte("invalid")
@@ -66,13 +66,9 @@ const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %0
 func main() {
 	mem := flag.String("m", "", "memory profile")
 	cpu := flag.String("c", "", "cpu profile")
-	gc := flag.Int("g", 0, "gc percent")
 	withError := flag.Bool("e", false, "include invalid packets")
 	flag.Parse()
 
-	if *gc > 0 {
-		debug.SetGCPercent(*gc)
-	}
 	if *cpu != "" {
 		w, err := os.Create(*cpu)
 		if err != nil {
@@ -197,7 +193,7 @@ func timeFormat(t time.Time, buf []byte) []byte {
 		buf = strconv.AppendInt(buf, 0, 10)
 	}
 	buf = strconv.AppendInt(buf, int64(d), 10)
-	buf = append(buf, space)
+	buf = append(buf, ' ')
 	if t.Hour() < 10 {
 		buf = strconv.AppendInt(buf, 0, 10)
 	}
