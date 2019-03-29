@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"runtime/pprof"
-	"runtime/trace"
-	"strconv"
 	"time"
 	"unicode"
 
@@ -50,12 +46,12 @@ const (
 )
 
 var (
-	modeRT = []byte("rt")
-	modePB = []byte("pb")
+	modeRT = []byte("realtime")
+	modePB = []byte("playback")
 
-	chanVic1 = []byte("v1")
-	chanVic2 = []byte("v2")
-	chanLRSD = []byte("sc")
+	chanVic1 = []byte("vic1")
+	chanVic2 = []byte("vic2")
+	chanLRSD = []byte("lrsd")
 
 	unknown = []byte("***")
 	invalid = []byte("invalid")
@@ -64,49 +60,8 @@ var (
 const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
 
 func main() {
-	mem := flag.String("m", "", "memory profile")
-	cpu := flag.String("c", "", "cpu profile")
-	trc := flag.String("t", "", "trace")
 	withError := flag.Bool("e", false, "include invalid packets")
 	flag.Parse()
-
-	if *cpu != "" {
-		w, err := os.Create(*cpu)
-		if err != nil {
-			os.Exit(77)
-		}
-		defer w.Close()
-		if err := pprof.StartCPUProfile(w); err != nil {
-			os.Exit(78)
-		}
-		defer pprof.StopCPUProfile()
-	}
-
-	if *mem != "" {
-		defer func() {
-			w, err := os.Create(*mem)
-			if err != nil {
-				os.Exit(61)
-			}
-			defer w.Close()
-			runtime.GC()
-			if err := pprof.WriteHeapProfile(w); err != nil {
-				os.Exit(62)
-			}
-		}()
-	}
-
-	if *trc != "" {
-		w, err := os.Create(*trc)
-		if err != nil {
-			os.Exit(81)
-		}
-		defer w.Close()
-		if err := trace.Start(w); err != nil {
-			os.Exit(82)
-		}
-		defer trace.Stop()
-	}
 
 	mr, err := multireader.New(flag.Args(), true)
 	if err != nil {
@@ -179,10 +134,11 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 	return int(v.Size), err
 }
 
+const TimeFormat = "2006-01-02 15:04:05.000"
+
 func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum uint32, digest uint64) {
-	// vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
-	// acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
-	// channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
+	vmutime := make([]byte, 0, 64)
+	acqtime := make([]byte, 0, 64)
 
 	d := struct {
 		Size    uint32
@@ -201,8 +157,8 @@ func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum 
 	}{
 		Size:    v.Size,
 		Error:   h.Error,
-		VMUTime: timeFormat(v.Timestamp(), vmuTimeBuffer),
-		ACQTime: timeFormat(c.Acquisition(), acqTimeBuffer),
+		VMUTime: v.Timestamp().AppendFormat(vmutime, TimeFormat),
+		ACQTime: c.Acquisition().AppendFormat(acqtime, TimeFormat),
 		Channel: whichChannel(v.Channel),
 		Mode:    whichMode(v.Origin, c.Origin),
 		Origin:  c.Origin,
@@ -216,58 +172,9 @@ func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum 
 	fmt.Fprintf(os.Stdout, listRow, d.Size, d.Error, d.VMUTime, d.VMUSeq, d.Mode, d.Channel, d.Origin, d.ACQTime, d.ACQSeq, d.UPI, d.Sum, d.Bad, d.Digest)
 }
 
-var (
-	upiBuffer     = make([]byte, UPILen)
-	vmuTimeBuffer = make([]byte, 0, UPILen)
-	acqTimeBuffer = make([]byte, 0, UPILen)
-)
-
-const millis = 1000 * 1000
-
-func timeFormat(t time.Time, buf []byte) []byte {
-	y, m, d := t.Date()
-	buf = strconv.AppendInt(buf, int64(y), 10)
-	buf = append(buf, '-')
-	if m < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(m), 10)
-	buf = append(buf, '-')
-	if d < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(d), 10)
-	buf = append(buf, ' ')
-	if t.Hour() < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(t.Hour()), 10)
-	buf = append(buf, ':')
-	if t.Minute() < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(t.Minute()), 10)
-	buf = append(buf, ':')
-	if t.Second() < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(t.Second()), 10)
-
-	buf = append(buf, '.')
-	ms := t.Nanosecond() / millis
-	if ms < 10 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	if ms < 100 {
-		buf = strconv.AppendInt(buf, 0, 10)
-	}
-	buf = strconv.AppendInt(buf, int64(ms), 10)
-
-	return buf
-}
-
 func userInfo(upi [UPILen]byte) []byte {
 	var n int
+	buffer := make([]byte, UPILen)
 	for i := 0; i < UPILen; i++ {
 		keep, done := shouldKeepRune(rune(upi[i]))
 		if done {
@@ -276,10 +183,10 @@ func userInfo(upi [UPILen]byte) []byte {
 		if !keep {
 			continue
 		}
-		upiBuffer[n] = upi[i]
+		buffer[n] = upi[i]
 		n++
 	}
-	return upiBuffer[:n]
+	return buffer[:n]
 }
 
 type HRDLHeader struct {
