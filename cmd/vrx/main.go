@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"strconv"
 	"time"
 	"unicode"
@@ -65,6 +66,7 @@ const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %0
 func main() {
 	mem := flag.String("m", "", "memory profile")
 	cpu := flag.String("c", "", "cpu profile")
+	trc := flag.String("t", "", "trace")
 	withError := flag.Bool("e", false, "include invalid packets")
 	flag.Parse()
 
@@ -84,14 +86,26 @@ func main() {
 		defer func() {
 			w, err := os.Create(*mem)
 			if err != nil {
-				return
+				os.Exit(61)
 			}
 			defer w.Close()
 			runtime.GC()
 			if err := pprof.WriteHeapProfile(w); err != nil {
-				return
+				os.Exit(62)
 			}
 		}()
+	}
+
+	if *trc != "" {
+		w, err := os.Create(*trc)
+		if err != nil {
+			os.Exit(81)
+		}
+		defer w.Close()
+		if err := trace.Start(w); err != nil {
+			os.Exit(82)
+		}
+		defer trace.Stop()
 	}
 
 	mr, err := multireader.New(flag.Args(), true)
@@ -158,25 +172,55 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 		return 0, ErrInvalid
 	}
 
-	vmutime := make([]byte, 0, 64)
-	acqtime := make([]byte, 0, 64)
-	vmutime = v.Timestamp().AppendFormat(vmutime, time.RFC3339) // timeFormat(v.Timestamp(), vmuTimeBuffer)
-	acqtime = c.Acquisition().AppendFormat(acqtime, time.RFC3339) // timeFormat(c.Acquisition(), acqTimeBuffer)
-	channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
-
-	// writer, pattern, uint32, uint16, []byte; uint32, []byte, []byte, uint8, []byte, uint32, []byte, uint32, []byte, uint64
-	fmt.Fprintf(os.Stdout, listRow, v.Size, h.Error, vmutime, v.Sequence, mode, channel, c.Origin, acqtime, c.Counter, userInfo(c.UPI), sum, bad, digest)
+	printHeaders(h, v, c, bad, sum, digest)
 	if bytes.Equal(bad, invalid) {
 		err = ErrInvalid
 	}
 	return int(v.Size), err
 }
 
-// var (
-// 	upiBuffer     = make([]byte, UPILen)
-// 	vmuTimeBuffer = make([]byte, 0, UPILen)
-// 	acqTimeBuffer = make([]byte, 0, UPILen)
-// )
+func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum uint32, digest uint64) {
+	// vmutime := timeFormat(v.Timestamp(), vmuTimeBuffer)
+	// acqtime := timeFormat(c.Acquisition(), acqTimeBuffer)
+	// channel, mode := whichChannel(v.Channel), whichMode(v.Origin, c.Origin)
+
+	d := struct {
+		Size    uint32
+		Error   uint16
+		VMUTime []byte
+		ACQTime []byte
+		Channel []byte
+		Mode    []byte
+		Origin  uint8
+		VMUSeq  uint32
+		ACQSeq  uint32
+		UPI     []byte
+		Sum     uint32
+		Digest  uint64
+		Bad     []byte
+	}{
+		Size:    v.Size,
+		Error:   h.Error,
+		VMUTime: timeFormat(v.Timestamp(), vmuTimeBuffer),
+		ACQTime: timeFormat(c.Acquisition(), acqTimeBuffer),
+		Channel: whichChannel(v.Channel),
+		Mode:    whichMode(v.Origin, c.Origin),
+		Origin:  c.Origin,
+		VMUSeq:  v.Sequence,
+		ACQSeq:  c.Counter,
+		UPI:     userInfo(c.UPI),
+		Sum:     sum,
+		Digest:  digest,
+		Bad:     bad,
+	}
+	fmt.Fprintf(os.Stdout, listRow, d.Size, d.Error, d.VMUTime, d.VMUSeq, d.Mode, d.Channel, d.Origin, d.ACQTime, d.ACQSeq, d.UPI, d.Sum, d.Bad, d.Digest)
+}
+
+var (
+	upiBuffer     = make([]byte, UPILen)
+	vmuTimeBuffer = make([]byte, 0, UPILen)
+	acqTimeBuffer = make([]byte, 0, UPILen)
+)
 
 const millis = 1000 * 1000
 
@@ -224,7 +268,6 @@ func timeFormat(t time.Time, buf []byte) []byte {
 
 func userInfo(upi [UPILen]byte) []byte {
 	var n int
-	buffer := make([]byte, UPILen)
 	for i := 0; i < UPILen; i++ {
 		keep, done := shouldKeepRune(rune(upi[i]))
 		if done {
@@ -233,10 +276,10 @@ func userInfo(upi [UPILen]byte) []byte {
 		if !keep {
 			continue
 		}
-		buffer[n] = upi[i]
+		upiBuffer[n] = upi[i]
 		n++
 	}
-	return buffer[:n]
+	return upiBuffer[:n]
 }
 
 type HRDLHeader struct {
