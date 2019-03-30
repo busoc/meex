@@ -14,6 +14,7 @@ import (
 	"github.com/busoc/meex"
 	"github.com/busoc/meex/cmd/internal/multireader"
 	"github.com/busoc/timutil"
+	"github.com/midbel/linewriter"
 	"github.com/midbel/xxh"
 )
 
@@ -46,8 +47,8 @@ const (
 )
 
 var (
-	modeRT = []byte("realtime")
-	modePB = []byte("playback")
+	modeRT = []byte("rt")
+	modePB = []byte("pb")
 
 	chanVic1 = []byte("vic1")
 	chanVic2 = []byte("vic2")
@@ -57,7 +58,7 @@ var (
 	invalid = []byte("invalid")
 )
 
-const listRow = "%8d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
+const listRow = "%7d | %04x || %s | %9d | %s | %s || %02x | %s | %7d | %16s | %08x | %8s || %08x\n"
 
 func main() {
 	withError := flag.Bool("e", false, "include invalid packets")
@@ -74,6 +75,8 @@ func main() {
 
 	buffer := make([]byte, meex.MaxBufferSize)
 	var total, size, invalid int64
+
+	line := linewriter.New(1024, 1)
 	for {
 		n, err := rt.Read(buffer)
 		if err != nil {
@@ -83,7 +86,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "unexpected error reading rt:", err)
 			os.Exit(2)
 		}
-		z, err := dumpPacket(buffer[:n], digest.Sum64(), *withError)
+		z, err := dumpPacket(line, buffer[:n], digest.Sum64(), *withError)
 		total++
 		size += int64(z)
 		switch {
@@ -99,7 +102,7 @@ func main() {
 	fmt.Fprintf(os.Stdout, "%d packets (%dMB, %d invalid)\n", total, size>>20, invalid)
 }
 
-func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
+func dumpPacket(line *linewriter.Writer, body []byte, digest uint64, withErr bool) (int, error) {
 	if len(body) < HRDLHeaderLen+VMUHeaderLen {
 		return 0, NotEnoughByte(0, len(body))
 	}
@@ -127,7 +130,7 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 		return 0, ErrInvalid
 	}
 
-	printHeaders(h, v, c, bad, sum, digest)
+	printHeaders(line, h, v, c, bad, sum, digest)
 	if bytes.Equal(bad, invalid) {
 		err = ErrInvalid
 	}
@@ -136,7 +139,7 @@ func dumpPacket(body []byte, digest uint64, withErr bool) (int, error) {
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
-func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum uint32, digest uint64) {
+func printHeaders(line *linewriter.Writer, h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum uint32, digest uint64) {
 	vmutime := make([]byte, 0, 64)
 	acqtime := make([]byte, 0, 64)
 
@@ -169,7 +172,24 @@ func printHeaders(h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum 
 		Digest:  digest,
 		Bad:     bad,
 	}
-	fmt.Fprintf(os.Stdout, listRow, d.Size, d.Error, d.VMUTime, d.VMUSeq, d.Mode, d.Channel, d.Origin, d.ACQTime, d.ACQSeq, d.UPI, d.Sum, d.Bad, d.Digest)
+	// fmt.Fprintf(os.Stdout, listRow, d.Size, d.Error, d.VMUTime, d.VMUSeq, d.Mode, d.Channel, d.Origin, d.ACQTime, d.ACQSeq, d.UPI, d.Sum, d.Bad, d.Digest)
+
+	// fmt.Println("append size")
+	line.AppendUint(uint64(d.Size), 7, linewriter.AlignRight)
+	line.AppendUint(uint64(d.Error), 4, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendBytes(d.VMUTime, len(d.VMUTime), linewriter.AlignCenter|linewriter.Text)
+	line.AppendUint(uint64(d.VMUSeq), 7, linewriter.AlignRight)
+	line.AppendBytes(d.Mode, 2, linewriter.AlignCenter|linewriter.Text)
+	line.AppendBytes(d.Channel, 4, linewriter.AlignCenter|linewriter.Text)
+	line.AppendUint(uint64(d.Origin), 2, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendBytes(d.ACQTime, len(d.ACQTime), linewriter.AlignCenter|linewriter.Text)
+	line.AppendUint(uint64(d.ACQSeq), 8, linewriter.AlignRight)
+	line.AppendBytes(d.UPI, 16, linewriter.AlignLeft|linewriter.Text)
+	line.AppendUint(uint64(d.Sum), 8, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendBytes(d.Bad, 8, linewriter.AlignCenter|linewriter.Text)
+	line.AppendUint(uint64(d.Digest), 16, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+
+	io.Copy(os.Stdout, line)
 }
 
 func userInfo(upi [UPILen]byte) []byte {
