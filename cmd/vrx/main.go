@@ -11,10 +11,10 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/midbel/linewriter"
 	"github.com/busoc/meex"
 	"github.com/busoc/meex/cmd/internal/multireader"
 	"github.com/busoc/timutil"
-	"github.com/midbel/linewriter"
 	"github.com/midbel/xxh"
 )
 
@@ -129,8 +129,31 @@ func dumpPacket(line *linewriter.Writer, body []byte, digest uint64, withErr boo
 	if bytes.Equal(bad, invalid) && !withErr {
 		return 0, ErrInvalid
 	}
+	defer line.Reset()
 
-	printHeaders(line, h, v, c, bad, sum, digest)
+	channel := whichChannel(v.Channel)
+	mode := whichMode(v.Origin, c.Origin)
+
+	// packet info
+	line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
+	line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	// packet VMU info
+	line.AppendTime(v.Timestamp(), TimeFormat, linewriter.AlignCenter)
+	line.AppendUint(uint64(v.Sequence), 	7, linewriter.AlignRight)
+	line.AppendBytes(mode, 2, linewriter.AlignCenter|linewriter.Text)
+	line.AppendBytes(channel, 4, linewriter.AlignCenter|linewriter.Text)
+	// packet HRD info
+	line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendTime(c.Acquisition(), TimeFormat, linewriter.AlignCenter)
+	line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
+	line.AppendBytes(userInfo(c.UPI), 16, linewriter.AlignLeft|linewriter.Text)
+	// packet sums and valid
+	line.AppendUint(uint64(sum), 8, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendBytes(bad, 8, linewriter.AlignCenter|linewriter.Text)
+	line.AppendUint(uint64(digest), 16, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+
+	os.Stdout.Write(append(line.Bytes(), '\n'))
+
 	if bytes.Equal(bad, invalid) {
 		err = ErrInvalid
 	}
@@ -139,62 +162,10 @@ func dumpPacket(line *linewriter.Writer, body []byte, digest uint64, withErr boo
 
 const TimeFormat = "2006-01-02 15:04:05.000"
 
-func printHeaders(line *linewriter.Writer, h HRDLHeader, v VMUHeader, c VMUCommonHeader, bad []byte, sum uint32, digest uint64) {
-	vmutime := make([]byte, 0, 64)
-	acqtime := make([]byte, 0, 64)
-
-	d := struct {
-		Size    uint32
-		Error   uint16
-		VMUTime []byte
-		ACQTime []byte
-		Channel []byte
-		Mode    []byte
-		Origin  uint8
-		VMUSeq  uint32
-		ACQSeq  uint32
-		UPI     []byte
-		Sum     uint32
-		Digest  uint64
-		Bad     []byte
-	}{
-		Size:    v.Size,
-		Error:   h.Error,
-		VMUTime: v.Timestamp().AppendFormat(vmutime, TimeFormat),
-		ACQTime: c.Acquisition().AppendFormat(acqtime, TimeFormat),
-		Channel: whichChannel(v.Channel),
-		Mode:    whichMode(v.Origin, c.Origin),
-		Origin:  c.Origin,
-		VMUSeq:  v.Sequence,
-		ACQSeq:  c.Counter,
-		UPI:     userInfo(c.UPI),
-		Sum:     sum,
-		Digest:  digest,
-		Bad:     bad,
-	}
-	// fmt.Fprintf(os.Stdout, listRow, d.Size, d.Error, d.VMUTime, d.VMUSeq, d.Mode, d.Channel, d.Origin, d.ACQTime, d.ACQSeq, d.UPI, d.Sum, d.Bad, d.Digest)
-
-	// fmt.Println("append size")
-	line.AppendUint(uint64(d.Size), 7, linewriter.AlignRight)
-	line.AppendUint(uint64(d.Error), 4, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
-	line.AppendBytes(d.VMUTime, len(d.VMUTime), linewriter.AlignCenter|linewriter.Text)
-	line.AppendUint(uint64(d.VMUSeq), 7, linewriter.AlignRight)
-	line.AppendBytes(d.Mode, 2, linewriter.AlignCenter|linewriter.Text)
-	line.AppendBytes(d.Channel, 4, linewriter.AlignCenter|linewriter.Text)
-	line.AppendUint(uint64(d.Origin), 2, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
-	line.AppendBytes(d.ACQTime, len(d.ACQTime), linewriter.AlignCenter|linewriter.Text)
-	line.AppendUint(uint64(d.ACQSeq), 8, linewriter.AlignRight)
-	line.AppendBytes(d.UPI, 16, linewriter.AlignLeft|linewriter.Text)
-	line.AppendUint(uint64(d.Sum), 8, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
-	line.AppendBytes(d.Bad, 8, linewriter.AlignCenter|linewriter.Text)
-	line.AppendUint(uint64(d.Digest), 16, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
-
-	io.Copy(os.Stdout, line)
-}
+var upiBuffer = make([]byte, UPILen)
 
 func userInfo(upi [UPILen]byte) []byte {
 	var n int
-	buffer := make([]byte, UPILen)
 	for i := 0; i < UPILen; i++ {
 		keep, done := shouldKeepRune(rune(upi[i]))
 		if done {
@@ -203,10 +174,10 @@ func userInfo(upi [UPILen]byte) []byte {
 		if !keep {
 			continue
 		}
-		buffer[n] = upi[i]
+		upiBuffer[n] = upi[i]
 		n++
 	}
-	return buffer[:n]
+	return upiBuffer[:n]
 }
 
 type HRDLHeader struct {
