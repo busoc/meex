@@ -136,21 +136,21 @@ func dumpPacket(line *linewriter.Writer, body []byte, digest uint64, withErr boo
 
 	// packet info
 	line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
-	line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	// packet VMU info
 	line.AppendTime(v.Timestamp(), TimeFormat, linewriter.AlignCenter)
 	line.AppendUint(uint64(v.Sequence), 	7, linewriter.AlignRight)
 	line.AppendBytes(mode, 2, linewriter.AlignCenter|linewriter.Text)
 	line.AppendBytes(channel, 4, linewriter.AlignCenter|linewriter.Text)
 	// packet HRD info
-	line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	line.AppendTime(c.Acquisition(), TimeFormat, linewriter.AlignCenter)
 	line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	line.AppendBytes(userInfo(c.UPI), 16, linewriter.AlignLeft|linewriter.Text)
 	// packet sums and valid
-	line.AppendUint(uint64(sum), 8, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendUint(uint64(sum), 8, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	line.AppendBytes(bad, 8, linewriter.AlignCenter|linewriter.Text)
-	line.AppendUint(uint64(digest), 16, linewriter.AlignRight|linewriter.Base16|linewriter.ZeroFill)
+	line.AppendUint(uint64(digest), 16, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 
 	os.Stdout.Write(append(line.Bytes(), '\n'))
 
