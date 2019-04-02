@@ -211,43 +211,19 @@ func runDiff(cmd *cli.Command, args []string) error {
 
 	var (
 		getBy func(vmu.Packet) uint8
-		gapBy func(vmu.Packet, vmu.Packet) (bool, meex.Gap)
+		gapBy func(vmu.Packet, vmu.Packet, time.Duration) (bool, meex.Gap)
 		appendBy func(*linewriter.Writer, vmu.Packet)
 	)
 	switch strings.ToLower(*by) {
 	case "channel", "":
 		getBy = byChannel
-		gapBy = func(p, prev vmu.Packet) (ok bool, g meex.Gap) {
-			last, first := int(p.VMUHeader.Sequence), int(prev.VMUHeader.Sequence)
-			delta := p.VMUHeader.Timestamp().Sub(prev.VMUHeader.Timestamp())
-			if diff := last - first; diff != 1 && (*duration == 0 || delta <= *duration) {
-				g.Last = first
-				g.First = last
-				g.Starts = prev.VMUHeader.Timestamp()
-				g.Ends = p.VMUHeader.Timestamp()
-
-				ok = true
-			}
-			return
-		}
+		gapBy = gapByChannel
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
 			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text | linewriter.AlignLeft)
 		}
 	case "origin":
 		getBy = byOrigin
-		gapBy = func(p, prev vmu.Packet) (ok bool, g meex.Gap) {
-			last, first := int(p.DataHeader.Counter), int(prev.DataHeader.Counter)
-			delta := p.DataHeader.Acquisition().Sub(prev.DataHeader.Acquisition())
-			if diff := last - first; diff != 1 && (*duration == 0 || delta <= *duration) {
-				g.Last = first
-				g.First = last
-				g.Starts = prev.DataHeader.Acquisition()
-				g.Ends = p.DataHeader.Acquisition()
-
-				ok = true
-			}
-			return
-		}
+		gapBy = gapByOrigin
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
 			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text | linewriter.AlignLeft)
 			line.AppendUint(uint64(p.DataHeader.Origin), 2, linewriter.AlignCenter | linewriter.Hex | linewriter.WithZero)
@@ -271,7 +247,7 @@ func runDiff(cmd *cli.Command, args []string) error {
 			}
 			by := getBy(p)
 			if prev, ok := seen[by]; ok {
-				if ok, g := gapBy(p, prev); ok {
+				if ok, g := gapBy(p, prev, *duration); ok {
 					appendBy(line, p)
 					line.AppendTime(g.Starts, "2006-01-02 15:04:05.000", linewriter.AlignRight)
 					line.AppendTime(g.Ends, "2006-01-02 15:04:05.000", linewriter.AlignRight)
@@ -337,13 +313,42 @@ func dumpPacket(line *linewriter.Writer, p vmu.Packet, missing uint32, valid boo
 	os.Stdout.Write(append(line.Bytes(), '\n'))
 }
 
-
 func byChannel(p vmu.Packet) uint8 {
 	return p.VMUHeader.Channel
 }
 
 func byOrigin(p vmu.Packet) uint8 {
 	return p.DataHeader.Origin
+}
+
+func gapByChannel(p, prev vmu.Packet, duration time.Duration) (ok bool, g meex.Gap) {
+	last, first := int(p.VMUHeader.Sequence), int(prev.VMUHeader.Sequence)
+	delta := p.VMUHeader.Timestamp().Sub(prev.VMUHeader.Timestamp())
+
+	if diff := last - first; diff != 1 && (duration == 0 || delta <= duration) {
+		g.Last = first
+		g.First = last
+		g.Starts = prev.VMUHeader.Timestamp()
+		g.Ends = p.VMUHeader.Timestamp()
+
+		ok = true
+	}
+	return
+}
+
+func gapByOrigin(p, prev vmu.Packet, duration time.Duration) (ok bool, g meex.Gap) {
+	last, first := int(p.DataHeader.Counter), int(prev.DataHeader.Counter)
+	delta := p.DataHeader.Acquisition().Sub(prev.DataHeader.Acquisition())
+
+	if diff := last - first; diff != 1 && (duration == 0 || delta <= duration) {
+		g.Last = first
+		g.First = last
+		g.Starts = prev.DataHeader.Acquisition()
+		g.Ends = p.DataHeader.Acquisition()
+
+		ok = true
+	}
+	return
 }
 
 func whichChannel(c uint8) []byte {
