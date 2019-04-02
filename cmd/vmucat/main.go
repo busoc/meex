@@ -13,10 +13,7 @@ import (
 	"github.com/midbel/cli"
 	"github.com/midbel/linewriter"
 	"github.com/midbel/xxh"
-	"github.com/pkg/profile"
 )
-
-const TimeFormat = "2006-01-02 15:04:05.000"
 
 var (
 	modeRT = []byte("realtime")
@@ -62,8 +59,6 @@ Use {{.Name}} [command] -h for more information about its usage.
 `
 
 func main() {
-	// defer profile.Start(profile.CPUProfile).Stop()
-	defer profile.Start(profile.MemProfile).Stop()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Fatalf("unexpected error: %s", err)
@@ -249,8 +244,8 @@ func runDiff(cmd *cli.Command, args []string) error {
 			if prev, ok := seen[by]; ok {
 				if ok, g := gapBy(p, prev, *duration); ok {
 					appendBy(line, p)
-					line.AppendTime(g.Starts, "2006-01-02 15:04:05.000", linewriter.AlignRight)
-					line.AppendTime(g.Ends, "2006-01-02 15:04:05.000", linewriter.AlignRight)
+					line.AppendTime(g.Starts, meex.TimeFormat, linewriter.AlignRight)
+					line.AppendTime(g.Ends, meex.TimeFormat, linewriter.AlignRight)
 					line.AppendInt(int64(g.Last), 8, linewriter.AlignRight)
 					line.AppendInt(int64(g.First), 8, linewriter.AlignRight)
 					line.AppendInt(int64(g.Missing()), 8, linewriter.AlignRight)
@@ -294,14 +289,14 @@ func dumpPacket(line *linewriter.Writer, p vmu.Packet, missing uint32, valid boo
 	line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
 	line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	// packet VMU info
-	line.AppendTime(v.Timestamp(), TimeFormat, linewriter.AlignCenter)
+	line.AppendTime(v.Timestamp(), meex.TimeFormat, linewriter.AlignCenter)
 	line.AppendUint(uint64(v.Sequence), 7, linewriter.AlignRight)
 	line.AppendUint(uint64(missing), 3, linewriter.AlignRight)
 	line.AppendBytes(whichMode(p.IsRealtime()), 8, linewriter.AlignCenter|linewriter.Text)
 	line.AppendBytes(whichChannel(v.Channel), 4, linewriter.AlignCenter|linewriter.Text)
 	// packet HRD info
 	line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	line.AppendTime(c.Acquisition(), TimeFormat, linewriter.AlignCenter)
+	line.AppendTime(c.Acquisition(), meex.TimeFormat, linewriter.AlignCenter)
 	line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
 	// packet sums and validity state
