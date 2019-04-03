@@ -79,7 +79,7 @@ func runList(cmd *cli.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	line := linewriter.New(1024, 1)
+	line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
 	seen := make(map[uint8]vmu.Packet)
 
 	var invalid, size, missing, skipped int
@@ -178,7 +178,7 @@ func runCount(cmd *cli.Command, args []string) error {
 			seen[by], stats[by] = p, cz
 		case vmu.ErrSkip:
 		case io.EOF:
-			line := linewriter.NewWriter(1024, 1, ' ')
+			line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
 			for b, cz := range stats {
 				appendBy(line, b)
 				line.AppendUint(cz.Count, 6, linewriter.AlignRight)
@@ -232,7 +232,7 @@ func runDiff(cmd *cli.Command, args []string) error {
 		return err
 	}
 	seen := make(map[uint8]vmu.Packet)
-	line := linewriter.NewWriter(1024, 1, ' ')
+	line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
 	for {
 		p, err := d.Decode(false)
 		switch err {
