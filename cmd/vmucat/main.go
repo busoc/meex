@@ -71,6 +71,7 @@ func main() {
 }
 
 func runList(cmd *cli.Command, args []string) error {
+	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
@@ -79,7 +80,16 @@ func runList(cmd *cli.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
+	var options []func(*linewriter.Writer)
+	if *csv {
+		options = append(options, linewriter.AsCSV(false))
+	} else {
+		options = []func(*linewriter.Writer) {
+			linewriter.WithPadding([]byte(" ")),
+			linewriter.WithSeparator([]byte("|")),
+		}
+	}
+	line := linewriter.NewWriter(1024, options...)
 	seen := make(map[uint8]vmu.Packet)
 
 	var invalid, size, missing, skipped int
