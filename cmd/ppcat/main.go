@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"io"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/busoc/meex"
 	"github.com/busoc/pdh"
@@ -88,6 +90,7 @@ func runList(cmd *cli.Command, args []string) error {
 }
 
 func runCount(cmd *cli.Command, args []string) error {
+	state := cmd.Flag.Bool("s", false, "count by state")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
@@ -95,7 +98,17 @@ func runCount(cmd *cli.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	stats := make(map[[pdh.UMICodeLen]byte]int)
+	headers := []string{
+		"UMI",
+		pdh.StateNoValue.String(),
+		pdh.StateSameValue.String(),
+		pdh.StateNewValue.String(),
+		pdh.StateLatestValue.String(),
+		pdh.StateErrorValue.String(),
+		"total",
+	}
+	stats := make(map[[pdh.UMICodeLen]byte][]int)
+	var codes [][pdh.UMICodeLen]byte
 	for {
 		p, err := d.Decode(false)
 		if err != nil {
@@ -104,19 +117,49 @@ func runCount(cmd *cli.Command, args []string) error {
 			}
 			return err
 		}
-		stats[p.Code]++
+		if _, ok := stats[p.Code]; !ok {
+			codes = append(codes, p.Code)
+			stats[p.Code] = make([]int, len(headers)-2)
+		}
+		stats[p.Code][int(p.State)]++
 	}
 	if len(stats) == 0 {
 		return nil
 	}
 	options := []func(*linewriter.Writer){
 		linewriter.WithPadding([]byte(" ")),
-		linewriter.WithSeparator([]byte(":")),
+		linewriter.WithSeparator([]byte("|")),
 	}
 	line := linewriter.NewWriter(1024, options...)
-	for k, v := range stats {
-		line.AppendBytes(k[:], 0, linewriter.Hex)
-		line.AppendInt(int64(v), 8, linewriter.AlignRight)
+	for i := 0; i < len(headers); i++ {
+		if !*state && !(i == 0 || i == len(headers)-1) {
+			continue
+		}
+		line.AppendString(headers[i], 12, linewriter.AlignRight)
+	}
+	os.Stdout.Write(append(line.Bytes(), '\n'))
+	line.Reset()
+
+	sort.Slice(codes, func(i, j int) bool {
+		s1, s2 := binary.BigEndian.Uint16(codes[i][:]), binary.BigEndian.Uint16(codes[j][:])
+		if s1 == s2 {
+			u1, u2 := binary.BigEndian.Uint32(codes[i][2:]), binary.BigEndian.Uint32(codes[j][2:])
+			return u1 < u2
+		}
+		return s1 < s2
+	})
+	for i := 0; i < len(codes); i++ {
+		k := codes[i]
+		vs := stats[k]
+		line.AppendBytes(k[:], 12, linewriter.Hex)
+		var total int
+		for i := 0; i < len(vs); i++ {
+			total += vs[i]
+			if *state {
+				line.AppendInt(int64(vs[i]), 12, linewriter.AlignRight)
+			}
+		}
+		line.AppendInt(int64(total), 12, linewriter.AlignRight)
 		os.Stdout.Write(append(line.Bytes(), '\n'))
 		line.Reset()
 	}
