@@ -43,7 +43,7 @@ Use {{.Name}} [command] -h for more information about its usage.
 `
 
 func main() {
-  defer func() {
+	defer func() {
 		if err := recover(); err != nil {
 			log.Fatalf("unexpected error: %s", err)
 		}
@@ -54,46 +54,114 @@ func main() {
 	}
 }
 
-
 func runList(cmd *cli.Command, args []string) error {
-  csv := cmd.Flag.Bool("c", false, "csv format")
-  if err := cmd.Flag.Parse(args); err!= nil {
-    return err
-  }
-  d, err := Decode(cmd.Flag.Args())
+	csv := cmd.Flag.Bool("c", false, "csv format")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	d, err := Decode(cmd.Flag.Args())
 	if err != nil {
 		return err
 	}
-  var options []func(*linewriter.Writer)
+	var options []func(*linewriter.Writer)
 	if *csv {
 		options = append(options, linewriter.AsCSV(false))
 	} else {
-		options = []func(*linewriter.Writer) {
+		options = []func(*linewriter.Writer){
 			linewriter.WithPadding([]byte(" ")),
 			linewriter.WithSeparator([]byte("|")),
 		}
 	}
 	line := linewriter.NewWriter(1024, options...)
 
-  for {
-    p, err := d.Decode(false)
-    if err != nil {
-      if err == io.EOF {
-        break
-      }
-      return err
-    }
-    dumpPacket(line, p)
-  }
-  return nil
+	for {
+		p, err := d.Decode(false)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		dumpPacket(line, p)
+	}
+	return nil
 }
 
 func runCount(cmd *cli.Command, args []string) error {
-  return cmd.Flag.Parse(args)
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	d, err := Decode(cmd.Flag.Args())
+	if err != nil {
+		return err
+	}
+	stats := make(map[[pdh.UMICodeLen]byte]int)
+	for {
+		p, err := d.Decode(false)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		stats[p.Code]++
+	}
+	if len(stats) == 0 {
+		return nil
+	}
+	options := []func(*linewriter.Writer){
+		linewriter.WithPadding([]byte(" ")),
+		linewriter.WithSeparator([]byte(":")),
+	}
+	line := linewriter.NewWriter(1024, options...)
+	for k, v := range stats {
+		line.AppendBytes(k[:], 0, linewriter.Hex)
+		line.AppendInt(int64(v), 8, linewriter.AlignRight)
+		os.Stdout.Write(append(line.Bytes(), '\n'))
+		line.Reset()
+	}
+	return nil
 }
 
 func runDiff(cmd *cli.Command, args []string) error {
-  return cmd.Flag.Parse(args)
+	duration := cmd.Flag.Duration("d", 0, "minimum duration between two packets")
+	if err := cmd.Flag.Parse(args); err != nil {
+		return err
+	}
+	d, err := Decode(cmd.Flag.Args())
+	if err != nil {
+		return err
+	}
+	options := []func(*linewriter.Writer){
+		linewriter.WithPadding([]byte(" ")),
+		linewriter.WithSeparator([]byte("|")),
+	}
+	line := linewriter.NewWriter(1024, options...)
+
+	stats := make(map[[pdh.UMICodeLen]byte]pdh.Packet)
+	for {
+		p, err := d.Decode(false)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		if other, ok := stats[p.Code]; ok {
+			f, t := other.Timestamp(), p.Timestamp()
+			if delta := t.Sub(f); delta >= *duration {
+				line.AppendBytes(p.Code[:], 0, linewriter.Hex)
+				line.AppendTime(f, meex.TimeFormat, linewriter.AlignRight)
+				line.AppendTime(t, meex.TimeFormat, linewriter.AlignRight)
+				line.AppendDuration(delta, 16, linewriter.AlignLeft)
+
+				os.Stdout.Write(append(line.Bytes(), '\n'))
+				line.Reset()
+			}
+		}
+		stats[p.Code] = p
+	}
+	return nil
 }
 
 func Decode(files []string) (*pdh.Decoder, error) {
@@ -105,14 +173,14 @@ func Decode(files []string) (*pdh.Decoder, error) {
 }
 
 func dumpPacket(line *linewriter.Writer, p pdh.Packet) {
-  defer line.Reset()
-  
-  line.AppendTime(p.Timestamp(), meex.TimeFormat, linewriter.AlignCenter)
-  line.AppendString(p.State.String(), 8, linewriter.AlignRight)
-  line.AppendBytes(p.Code[:], 0, linewriter.Hex)
-  line.AppendUint(uint64(p.Orbit), 8, linewriter.Hex|linewriter.WithZero)
-  line.AppendString(p.Type.String(), 12, linewriter.AlignRight)
-  line.AppendUint(uint64(p.Len), 8, linewriter.AlignRight)
+	defer line.Reset()
 
-  os.Stdout.Write(append(line.Bytes(), '\n'))
+	line.AppendTime(p.Timestamp(), meex.TimeFormat, linewriter.AlignCenter)
+	line.AppendString(p.State.String(), 8, linewriter.AlignRight)
+	line.AppendBytes(p.Code[:], 0, linewriter.Hex)
+	line.AppendUint(uint64(p.Orbit), 8, linewriter.Hex|linewriter.WithZero)
+	line.AppendString(p.Type.String(), 12, linewriter.AlignRight)
+	line.AppendUint(uint64(p.Len), 8, linewriter.AlignRight)
+
+	os.Stdout.Write(append(line.Bytes(), '\n'))
 }
