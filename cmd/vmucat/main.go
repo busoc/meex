@@ -84,7 +84,7 @@ func runList(cmd *cli.Command, args []string) error {
 	if *csv {
 		options = append(options, linewriter.AsCSV(false))
 	} else {
-		options = []func(*linewriter.Writer) {
+		options = []func(*linewriter.Writer){
 			linewriter.WithPadding([]byte(" ")),
 			linewriter.WithSeparator([]byte("|")),
 		}
@@ -113,8 +113,8 @@ func runList(cmd *cli.Command, args []string) error {
 			dumpPacket(line, p, diff, err != vmu.ErrInvalid)
 			size += int(p.VMUHeader.Size)
 		case vmu.ErrSkip:
-      skipped++
-      i--
+			skipped++
+			i--
 		case io.EOF:
 			log.Printf("%d packets (%dMB, %d invalid, %d missing, %d skipped)\n", i, size>>20, invalid, missing, skipped)
 			return nil
@@ -126,12 +126,12 @@ func runList(cmd *cli.Command, args []string) error {
 func runCount(cmd *cli.Command, args []string) error {
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
 	by := cmd.Flag.String("b", "", "count packets by channel or origin")
-	if err :=  cmd.Flag.Parse(args); err != nil {
+	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
 	var (
-		getBy func(vmu.Packet) uint8
-		missBy func(vmu.Packet, vmu.Packet) uint64
+		getBy    func(vmu.Packet) uint8
+		missBy   func(vmu.Packet, vmu.Packet) uint64
 		appendBy func(*linewriter.Writer, uint8)
 	)
 	switch strings.ToLower(*by) {
@@ -141,10 +141,10 @@ func runCount(cmd *cli.Command, args []string) error {
 			if p.VMUHeader.Sequence < prev.VMUHeader.Sequence {
 				return 0
 			}
-			return uint64(p.VMUHeader.Sequence - prev.VMUHeader.Sequence) - 1
+			return uint64(p.VMUHeader.Sequence-prev.VMUHeader.Sequence) - 1
 		}
 		appendBy = func(line *linewriter.Writer, c uint8) {
-			line.AppendBytes(whichChannel(c), 4, linewriter.Text | linewriter.AlignLeft)
+			line.AppendBytes(whichChannel(c), 4, linewriter.Text|linewriter.AlignLeft)
 		}
 	case "origin":
 		getBy = byOrigin
@@ -152,10 +152,10 @@ func runCount(cmd *cli.Command, args []string) error {
 			if p.DataHeader.Counter < prev.DataHeader.Counter {
 				return 0
 			}
-			return uint64(p.DataHeader.Counter - prev.DataHeader.Counter) - 1
+			return uint64(p.DataHeader.Counter-prev.DataHeader.Counter) - 1
 		}
 		appendBy = func(line *linewriter.Writer, c uint8) {
-			line.AppendUint(uint64(c), 2, linewriter.AlignCenter | linewriter.Hex | linewriter.WithZero)
+			line.AppendUint(uint64(c), 2, linewriter.AlignCenter|linewriter.Hex|linewriter.WithZero)
 		}
 	default:
 		return fmt.Errorf("unknown value %s", *by)
@@ -215,8 +215,8 @@ func runDiff(cmd *cli.Command, args []string) error {
 	}
 
 	var (
-		getBy func(vmu.Packet) uint8
-		gapBy func(vmu.Packet, vmu.Packet, time.Duration) (bool, meex.Gap)
+		getBy    func(vmu.Packet) uint8
+		gapBy    func(vmu.Packet, vmu.Packet, time.Duration) (bool, meex.Gap)
 		appendBy func(*linewriter.Writer, vmu.Packet)
 	)
 	switch strings.ToLower(*by) {
@@ -224,14 +224,14 @@ func runDiff(cmd *cli.Command, args []string) error {
 		getBy = byChannel
 		gapBy = gapByChannel
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
-			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text | linewriter.AlignLeft)
+			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
 		}
 	case "origin":
 		getBy = byOrigin
 		gapBy = gapByOrigin
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
-			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text | linewriter.AlignLeft)
-			line.AppendUint(uint64(p.DataHeader.Origin), 2, linewriter.AlignCenter | linewriter.Hex | linewriter.WithZero)
+			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
+			line.AppendUint(uint64(p.DataHeader.Origin), 2, linewriter.AlignCenter|linewriter.Hex|linewriter.WithZero)
 		}
 	default:
 		return fmt.Errorf("unknown value %s", *by)
