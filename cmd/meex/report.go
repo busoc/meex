@@ -50,9 +50,6 @@ func runList(cmd *cli.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if f, ok := pt.(Flusher); ok {
-		defer f.Flush()
-	}
 	var delta time.Duration
 	if !*toGPS {
 		delta = GPS.Sub(UNIX)

@@ -1,76 +1,57 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/csv"
 	"fmt"
-	"log"
+	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/midbel/linewriter"
 	"github.com/midbel/xxh"
 )
 
 const Bad = "invalid"
 
-func NewPrinter(f string) (Printer, error) {
-	var (
-		p   Printer
-		err error
-	)
-	hist := make(map[int]Packet)
+func NewPrinter(f string) (*Printer, error) {
+	var options []linewriter.Option
 	switch strings.ToLower(f) {
 	case "":
-		p = &logPrinter{
-			logger:  log.New(os.Stdout, "", 0),
-			history: hist,
-		}
+		options = append(options, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
 	case "csv":
-		p = &csvPrinter{
-			writer:  csv.NewWriter(os.Stdout),
-			history: hist,
-		}
+		options = append(options, linewriter.AsCSV(false))
 	default:
-		err = fmt.Errorf("unsupported output format")
+		return nil, fmt.Errorf("unsupported output format")
 	}
-	return p, err
+	p := Printer{
+		line:    linewriter.NewWriter(1024, options...),
+		history: make(map[int]Packet),
+	}
+	return &p, nil
 }
 
-type Flusher interface {
-	Flush() error
-}
-
-type Printer interface {
-	Print(Packet, time.Duration) error
-}
-
-type logPrinter struct {
-	logger  *log.Logger
+type Printer struct {
+	line    *linewriter.Writer
 	history map[int]Packet
 }
 
-func (pt *logPrinter) Print(p Packet, delta time.Duration) error {
+func (pt *Printer) Print(p Packet, delta time.Duration) error {
 	id, _ := p.Id()
 	switch p := p.(type) {
 	default:
 	case *VMUPacket:
-		printVMUPacket(pt.logger, p, p.Diff(pt.history[id]), delta)
+		printVMUPacket(pt.line, p, p.Diff(pt.history[id]), delta)
 	case *TMPacket:
-		printTMPacket(pt.logger, p, p.Diff(pt.history[id]), delta)
+		printTMPacket(pt.line, p, p.Diff(pt.history[id]), delta)
 	case *PDPacket:
-		printPDPacket(pt.logger, p, delta)
+		printPDPacket(pt.line, p, delta)
 	}
 	pt.history[id] = p
 	return nil
 }
 
-func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %04x || %s | %9d | %6d | %s | %5s || %02x | %s | %9d | %16s | %08x | %08x | %3s || %016x | %s"
-
-	a := p.HRH.Acquisition.Add(delta).Format(TimeFormat)
-	x := p.HRH.Reception.Sub(p.HRH.Acquisition)
+func printVMUPacket(line *linewriter.Writer, p *VMUPacket, g *Gap, delta time.Duration) {
+	a := p.HRH.Acquisition.Add(delta)
 
 	hr, err := p.Data()
 	if err != nil {
@@ -91,125 +72,75 @@ func printVMUPacket(logger *log.Logger, p *VMUPacket, g *Gap, delta time.Duratio
 	} else {
 		rt = "playback"
 	}
-	q := v.Acquisition().Format(TimeFormat)
+	q := v.Acquisition()
 	var diff int
 	if g != nil {
 		diff = g.Missing()
 	}
-	sum := xxh.Sum64(p.Payload, 0)
 	bad := "-"
 	if p.Sum != p.Control {
 		bad = Bad
 	}
-	logger.Printf(row, p.Len(), p.HRH.Error, a, p.Sequence(), diff, rt, p.VMU.Channel, v.Origin, q, v.Sequence(), v.String(), p.Sum, p.Control, bad, sum, x)
+	line.AppendUint(uint64(p.Len()), 9, linewriter.AlignRight)
+	line.AppendUint(uint64(p.HRH.Error), 4, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendTime(a, TimeFormat, linewriter.AlignRight)
+	line.AppendUint(uint64(p.Sequence()), 9, linewriter.AlignRight)
+	line.AppendUint(uint64(diff), 6, linewriter.AlignRight)
+	line.AppendString(rt, 8, linewriter.AlignRight)
+	line.AppendString(p.VMU.Channel.String(), 5, linewriter.AlignRight)
+	line.AppendUint(uint64(v.Origin), 2, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendTime(q, TimeFormat, linewriter.AlignRight)
+	line.AppendUint(uint64(v.Sequence()), 9, linewriter.AlignRight)
+	line.AppendString(v.String(), 16, linewriter.AlignRight)
+	line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendUint(uint64(p.Control), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendString(bad, 8, linewriter.AlignRight)
+	line.AppendUint(xxh.Sum64(p.Payload, 0), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendDuration(p.HRH.Reception.Sub(p.HRH.Acquisition), 9, linewriter.AlignLeft|linewriter.Millisecond)
+
+	io.Copy(os.Stdout, line)
 }
 
-func printTMPacket(logger *log.Logger, p *TMPacket, g *Gap, delta time.Duration) {
-	const row = "%9d | %4d | %4d | %4d || %s | %s | %16s | %x || %s"
-	a := p.Timestamp().Add(delta).Format(TimeFormat)
-	r := p.Reception().Add(delta).Format(TimeFormat)
+func printTMPacket(line *linewriter.Writer, p *TMPacket, g *Gap, delta time.Duration) {
+	a := p.Timestamp().Add(delta)
+	r := p.Reception().Add(delta)
 
-	x := p.Reception().Sub(p.Timestamp())
 	var diff int
 	if g != nil {
 		diff = g.Missing()
 	}
-	logger.Printf(row, p.Sequence(), diff, p.Len(), p.CCSDS.Apid(), a, r, p.ESA.PacketType(), md5.Sum(p.Bytes()), x)
+	typ := p.ESA.PacketType()
+
+	line.AppendUint(uint64(p.Sequence()), 9, linewriter.AlignRight)
+	line.AppendUint(uint64(diff), 4, linewriter.AlignRight)
+	line.AppendUint(uint64(p.Len()), 4, linewriter.AlignRight)
+	line.AppendUint(uint64(p.CCSDS.Apid()), 4, linewriter.AlignRight)
+	line.AppendTime(a, TimeFormat, linewriter.AlignRight)
+	line.AppendTime(r, TimeFormat, linewriter.AlignRight)
+	line.AppendString(typ.String(), 16, linewriter.AlignRight)
+	line.AppendUint(xxh.Sum64(p.Bytes(), 0), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendDuration(p.Reception().Sub(p.Timestamp()), 8, linewriter.AlignLeft|linewriter.Millisecond)
+
+	io.Copy(os.Stdout, line)
 }
 
-func printPDPacket(logger *log.Logger, p *PDPacket, delta time.Duration) {
-	const row = "%s | %10s | 0x%012x | %08x | %3d | %10s | % x"
-	a := p.Timestamp().Add(delta).Format(TimeFormat)
+func printPDPacket(line *linewriter.Writer, p *PDPacket, delta time.Duration) {
+	a := p.Timestamp().Add(delta)
 	ds := p.Payload[len(p.Payload)-int(p.UMI.Len):]
 	if len(ds) > 16 {
 		ds = ds[:16]
 	}
-	logger.Printf(row, a, p.UMI.State, p.UMI.Code, p.UMI.Orbit, p.UMI.Len, p.UMI.Type, ds)
-}
 
-type csvPrinter struct {
-	writer  *csv.Writer
-	history map[int]Packet
-}
+	state := p.UMI.State.String()
+	typ := p.UMI.Type.String()
 
-func (c *csvPrinter) Flush() error {
-	c.writer.Flush()
-	return c.writer.Error()
-}
+	line.AppendTime(a, TimeFormat, linewriter.AlignRight)
+	line.AppendString(state, 10, linewriter.AlignRight)
+	line.AppendBytes(p.UMI.Code[:], 12, linewriter.AlignRight|linewriter.Hex)
+	line.AppendUint(uint64(p.UMI.Orbit), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendUint(uint64(p.UMI.Len), 3, linewriter.AlignRight)
+	line.AppendString(typ, 10, linewriter.AlignRight)
+	line.AppendBytes(ds, 8, linewriter.AlignLeft|linewriter.Hex)
 
-func (c *csvPrinter) Print(p Packet, delta time.Duration) error {
-	id, _ := p.Id()
-	last := c.history[id]
-	var row []string
-	switch p := p.(type) {
-	case *VMUPacket:
-		hr, err := p.Data()
-		if err != nil {
-			return err
-		}
-		var v *VMUCommonHeader
-		switch hr := hr.(type) {
-		case *Image:
-			v = hr.VMUCommonHeader
-		case *Table:
-			v = hr.VMUCommonHeader
-		default:
-			return err
-		}
-		var diff int
-		g := p.Diff(last)
-		if g != nil {
-			diff = g.Missing()
-		}
-		var rt string
-		if v.Origin == p.VMU.Origin {
-			rt = "realtime"
-		} else {
-			rt = "playback"
-		}
-		sum := xxh.Sum64(p.Payload, 0)
-		bad := "-"
-		if p.Sum != p.Control {
-			bad = Bad
-		}
-		row = []string{
-			strconv.Itoa(p.Len()),
-			fmt.Sprintf("%04x", p.HRH.Error),
-			p.HRH.Acquisition.Add(delta).Format(TimeFormat),
-			strconv.Itoa(p.Sequence()),
-			strconv.Itoa(diff),
-			rt,
-			p.VMU.Channel.String(),
-			fmt.Sprintf("%02x", v.Origin),
-			v.Acquisition().Format(TimeFormat),
-			strconv.Itoa(v.Sequence()),
-			v.String(),
-			fmt.Sprintf("%08x", p.Sum),
-			fmt.Sprintf("%08x", p.Control),
-			bad,
-			fmt.Sprintf("%x", sum),
-			p.HRH.Reception.Sub(p.HRH.Acquisition).String(),
-		}
-	case *TMPacket:
-		row = []string{
-			strconv.Itoa(p.CCSDS.Sequence()),
-			strconv.Itoa(p.Len()),
-			strconv.Itoa(p.CCSDS.Apid()),
-			p.ESA.Acquisition.Add(delta).Format(TimeFormat),
-			p.PTH.Reception.Add(delta).Format(TimeFormat),
-			fmt.Sprintf("%x", md5.Sum(p.Payload)),
-		}
-	case *PDPacket:
-		row = []string{
-			p.Timestamp().Format(TimeFormat),
-			fmt.Sprintf("%x", p.UMI.Code),
-			p.UMI.State.String(),
-			p.UMI.Type.String(),
-			strconv.Itoa(p.Len()),
-			fmt.Sprintf("%x", p.Payload[len(p.Payload)-int(p.UMI.Len):]),
-			fmt.Sprintf("%x", md5.Sum(p.Payload)),
-		}
-	}
-	c.history[id] = p
-	return c.writer.Write(row)
+	io.Copy(os.Stdout, line)
 }
