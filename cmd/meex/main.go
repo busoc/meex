@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/midbel/cli"
 )
@@ -100,8 +98,8 @@ func init() {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
-	cli.Version = "0.2.0"
-	cli.BuildTime = "2019-03-14 10:15:00"
+	cli.Version = "0.2.1"
+	cli.BuildTime = "2019-04-29 07:35:00"
 }
 
 func main() {
@@ -110,25 +108,7 @@ func main() {
 			log.Fatalf("unexpected error: %s", err)
 		}
 	}()
-	sort.Slice(commands, func(i, j int) bool { return commands[i].String() < commands[j].String() })
-	usage := func() {
-		data := struct {
-			Name     string
-			Commands []*cli.Command
-		}{
-			Name:     filepath.Base(os.Args[0]),
-			Commands: commands,
-		}
-		fs := map[string]interface{}{
-			"join": strings.Join,
-		}
-		sort.Slice(data.Commands, func(i, j int) bool { return data.Commands[i].String() < data.Commands[j].String() })
-		t := template.Must(template.New("help").Funcs(fs).Parse(helpText))
-		t.Execute(os.Stderr, data)
-
-		os.Exit(2)
-	}
-	if err := cli.Run(commands, usage, nil); err != nil {
+	if err := cli.Run(commands, cli.Usage("meex", helpText, commands), nil); err != nil {
 		log.Fatalln(err)
 	}
 }
