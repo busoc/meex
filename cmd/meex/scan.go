@@ -1110,7 +1110,10 @@ func (r *Reader) Packets() <-chan Packet {
 }
 
 func (r *Reader) packets() {
-	defer close(r.queue)
+	defer func() {
+		close(r.queue)
+		r.queue = nil
+	}()
 	for {
 		p, err := r.Next()
 		if err == io.EOF {

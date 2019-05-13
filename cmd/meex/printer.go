@@ -95,7 +95,7 @@ func printVMUPacket(line *linewriter.Writer, p *VMUPacket, g *Gap, delta time.Du
 	line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
 	line.AppendUint(uint64(p.Control), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
 	line.AppendString(bad, 8, linewriter.AlignRight)
-	line.AppendUint(xxh.Sum64(p.Payload, 0), 8, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
+	line.AppendUint(xxh.Sum64(p.Payload, 0), 16, linewriter.AlignRight|linewriter.WithZero|linewriter.Hex)
 	line.AppendDuration(p.HRH.Reception.Sub(p.HRH.Acquisition), 9, linewriter.AlignLeft|linewriter.Millisecond)
 
 	io.Copy(os.Stdout, line)
