@@ -147,7 +147,7 @@ func Infos(paths []string, d Decoder) <-chan *Info {
 }
 
 func walk(p string, q chan Packet, d Decoder) error {
-	// var rt *Reader
+	var rt *Reader
 	return filepath.Walk(p, func(p string, i os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -161,12 +161,12 @@ func walk(p string, q chan Packet, d Decoder) error {
 		}
 		defer r.Close()
 
-		// if rt == nil {
-		// 	rt = NewReader(r, d)
-		// } else {
-		// 	rt.Reset(r)
-		// }
-		rt := NewReader(r, d)
+		if rt == nil {
+			rt = NewReader(r, d)
+		} else {
+			rt.Reset(r)
+		}
+		// rt := NewReader(r, d)
 		for p := range rt.Packets() {
 			q <- p
 		}

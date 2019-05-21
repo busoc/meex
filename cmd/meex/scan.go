@@ -1014,22 +1014,36 @@ type Index struct {
 }
 
 type Reader struct {
-	scan    *bufio.Scanner
+	// scan    *bufio.Scanner
+	// reader *bufio.Reader
+
+	reader io.Reader
 	decoder Decoder
 	digest  hash.Hash
+
+	tmp    []byte
+	buffer []byte
+	offset int
 
 	queue chan Packet
 }
 
+const maxBufferSize = 32<<20
+
 func NewReader(r io.Reader, d Decoder) *Reader {
-	rs := &Reader{decoder: d, digest: xxh.New64(0)}
+	rs := &Reader{
+		decoder: d,
+		digest: xxh.New64(0),
+		buffer: make([]byte, maxBufferSize),
+	}
 	rs.Reset(r)
 	return rs
 }
 
 func (r *Reader) Reset(rs io.Reader) {
 	r.digest.Reset()
-	r.scan = Scan(io.TeeReader(rs, r.digest))
+	r.reader = io.TeeReader(rs, r.digest)
+	// r.reader = rs
 }
 
 func (r *Reader) IndexSum() ([]*Index, string) {
@@ -1088,17 +1102,27 @@ func (r *Reader) Gaps() <-chan *Gap {
 }
 
 func (r *Reader) Next() (Packet, error) {
-	if !r.scan.Scan() {
-		return nil, io.EOF
+	if diff := maxBufferSize - r.offset; diff < 1024 {
+		r.offset = 0
 	}
-	bs := r.scan.Bytes()
-	if err := r.scan.Err(); err != nil {
+	if _, err := r.reader.Read(r.buffer[r.offset:r.offset+4]); err != nil {
+		return nil, err
+	}
+	size := int(binary.LittleEndian.Uint32(r.buffer[r.offset:]))
+	if diff := maxBufferSize - r.offset; size >= diff {
+		copy(r.buffer, r.buffer[r.offset:r.offset+4])
+		r.offset = 0
+	}
+
+	if _, err := r.reader.Read(r.buffer[r.offset+4:r.offset+size+4]); err != nil {
 		return nil, err
 	}
 	if r.decoder == nil {
 		return nil, ErrSkip
 	}
-	return r.decoder.Decode(bs)
+	offset := r.offset
+	r.offset += size + 4
+	return r.decoder.Decode(r.buffer[offset:offset+size+4])
 }
 
 func (r *Reader) Packets() <-chan Packet {

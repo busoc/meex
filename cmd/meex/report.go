@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/midbel/cli"
+	"github.com/pkg/profile"
 )
 
 const TimeFormat = "2006-01-02 15:04:05.000"
@@ -39,6 +40,7 @@ var errCommand = &cli.Command{
 func runList(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
+	mem := cmd.Flag.Bool("memprofile", false, "profile memory usage")
 	format := cmd.Flag.String("f", "", "format")
 	id := cmd.Flag.Int("i", 0, "")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
@@ -46,6 +48,11 @@ func runList(cmd *cli.Command, args []string) error {
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
+
+	if *mem {
+		defer profile.Start(profile.MemProfile).Stop()
+	}
+
 	pt, err := NewPrinter(*format)
 	if err != nil {
 		return err
@@ -74,11 +81,17 @@ func runList(cmd *cli.Command, args []string) error {
 func runDiff(cmd *cli.Command, args []string) error {
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
+	mem := cmd.Flag.Bool("memprofile", false, "profile memory usage")
 	toGPS := cmd.Flag.Bool("g", false, "gps time")
 	duration := cmd.Flag.Duration("d", 0, "duration")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
+
+	if *mem {
+		defer profile.Start(profile.MemProfile).Stop()
+	}
+
 	var delta time.Duration
 	if *toGPS {
 		delta = -GPS.Sub(UNIX)
@@ -147,9 +160,14 @@ func runCount(cmd *cli.Command, args []string) error {
 
 	var kind Kind
 	cmd.Flag.Var(&kind, "k", "packet type")
+	mem := cmd.Flag.Bool("memprofile", false, "profile memory usage")
 	toGPS := cmd.Flag.Bool("g", false, "to gps time")
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
+	}
+
+	if *mem {
+		defer profile.Start(profile.MemProfile).Stop()
 	}
 
 	var delta time.Duration
