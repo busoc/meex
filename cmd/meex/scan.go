@@ -1017,7 +1017,7 @@ type Reader struct {
 	// scan    *bufio.Scanner
 	// reader *bufio.Reader
 
-	reader io.Reader
+	reader  io.Reader
 	decoder Decoder
 	digest  hash.Hash
 
@@ -1028,13 +1028,13 @@ type Reader struct {
 	queue chan Packet
 }
 
-const maxBufferSize = 32<<20
+const maxBufferSize = 32 << 20
 
 func NewReader(r io.Reader, d Decoder) *Reader {
 	rs := &Reader{
 		decoder: d,
-		digest: xxh.New64(0),
-		buffer: make([]byte, maxBufferSize),
+		digest:  xxh.New64(0),
+		buffer:  make([]byte, maxBufferSize),
 	}
 	rs.Reset(r)
 	return rs
@@ -1105,7 +1105,7 @@ func (r *Reader) Next() (Packet, error) {
 	if diff := maxBufferSize - r.offset; diff < 1024 {
 		r.offset = 0
 	}
-	if _, err := r.reader.Read(r.buffer[r.offset:r.offset+4]); err != nil {
+	if _, err := r.reader.Read(r.buffer[r.offset : r.offset+4]); err != nil {
 		return nil, err
 	}
 	size := int(binary.LittleEndian.Uint32(r.buffer[r.offset:]))
@@ -1114,7 +1114,7 @@ func (r *Reader) Next() (Packet, error) {
 		r.offset = 0
 	}
 
-	if _, err := r.reader.Read(r.buffer[r.offset+4:r.offset+size+4]); err != nil {
+	if _, err := r.reader.Read(r.buffer[r.offset+4 : r.offset+size+4]); err != nil {
 		return nil, err
 	}
 	if r.decoder == nil {
@@ -1122,7 +1122,7 @@ func (r *Reader) Next() (Packet, error) {
 	}
 	offset := r.offset
 	r.offset += size + 4
-	return r.decoder.Decode(r.buffer[offset:offset+size+4])
+	return r.decoder.Decode(r.buffer[offset : offset+size+4])
 }
 
 func (r *Reader) Packets() <-chan Packet {
