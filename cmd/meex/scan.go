@@ -1109,7 +1109,7 @@ func (r *Reader) Next() (Packet, error) {
 		return nil, err
 	}
 	size := int(binary.LittleEndian.Uint32(r.buffer[r.offset:]))
-	if diff := maxBufferSize - r.offset; size >= diff {
+	if diff := maxBufferSize - (r.offset + 4); size >= diff {
 		copy(r.buffer, r.buffer[r.offset:r.offset+4])
 		r.offset = 0
 	}
