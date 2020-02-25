@@ -108,7 +108,5 @@ func main() {
 			log.Fatalf("unexpected error: %s", err)
 		}
 	}()
-	if err := cli.Run(commands, cli.Usage("meex", helpText, commands), nil); err != nil {
-		log.Fatalln(err)
-	}
+	cli.RunAndExit(commands, cli.Usage("meex", helpText, commands))
 }
