@@ -65,7 +65,7 @@ function keepOrigin(origin) {
   switch (origin) {
   default:
     return 0
-  case /3[3-9]|4[0-7]|51/:
+  case /3[3-9]|4[0-7]|51|90/:
     return 1
   }
 }
